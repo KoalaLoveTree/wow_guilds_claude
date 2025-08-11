@@ -1,6 +1,7 @@
 /// Strong types for better type safety and API clarity
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::ops::Deref;
 use std::str::FromStr;
 
 /// A guild name with validation
@@ -84,6 +85,18 @@ impl GuildName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub fn to_lowercase(&self) -> String {
+        self.0.to_lowercase()
+    }
+}
+
+impl Deref for GuildName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl fmt::Display for GuildName {
@@ -127,6 +140,14 @@ impl RealmName {
     }
 
     pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for RealmName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
@@ -188,6 +209,14 @@ impl PlayerName {
             *ch = ch.to_lowercase().next().unwrap_or(*ch);
         }
         chars.into_iter().collect()
+    }
+}
+
+impl Deref for PlayerName {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -273,6 +302,18 @@ impl MythicPlusScore {
     }
 }
 
+impl PartialOrd<u32> for MythicPlusScore {
+    fn partial_cmp(&self, other: &u32) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+
+impl PartialEq<u32> for MythicPlusScore {
+    fn eq(&self, other: &u32) -> bool {
+        self.0 == *other
+    }
+}
+
 impl fmt::Display for MythicPlusScore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
@@ -282,6 +323,12 @@ impl fmt::Display for MythicPlusScore {
 impl From<u32> for MythicPlusScore {
     fn from(score: u32) -> Self {
         Self::new(score)
+    }
+}
+
+impl From<MythicPlusScore> for u32 {
+    fn from(score: MythicPlusScore) -> Self {
+        score.0
     }
 }
 

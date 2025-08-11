@@ -12,6 +12,10 @@ pub enum BotError {
     #[error("JSON processing failed: {0}")]
     Json(#[from] serde_json::Error),
 
+    /// CSV processing errors
+    #[error("CSV processing failed: {0}")]
+    Csv(#[from] csv::Error),
+
     /// File I/O errors
     #[error("File operation failed: {0}")]
     Io(#[from] std::io::Error),

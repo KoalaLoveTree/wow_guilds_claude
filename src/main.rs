@@ -22,6 +22,29 @@ mod types;
 use crate::config::AppConfig;
 use crate::error::{BotError, Result};
 
+// Logging macros
+macro_rules! log_api_request {
+    ($method:expr, $url:expr, $status:expr, duration = $duration:expr) => {
+        tracing::info!(
+            method = %$method,
+            url = %$url,
+            status = $status,
+            duration_ms = $duration,
+            "API request completed"
+        );
+    };
+}
+
+macro_rules! log_discord_command {
+    ($command:expr, $user_id:expr) => {
+        tracing::info!(
+            command = %$command,
+            user_id = $user_id,
+            "Discord command received"
+        );
+    };
+}
+
 /// Discord event handler
 struct Handler {
     config: AppConfig,
@@ -75,20 +98,14 @@ impl EventHandler for Handler {
                 "rules" => commands::handle_rules_command().await,
                 "help" => commands::handle_help_command().await,
                 _ => {
-                    // For complex commands that might take time, defer the response
-                    if let Err(why) = command
-                        .create_interaction_response(&ctx.http, |response| {
-                            response
-                                .kind(InteractionResponseType::DeferredChannelMessageWithSource)
-                        })
-                        .await
-                    {
-                        error!(command = %command_name, error = %why, "Failed to defer response");
-                        return;
-                    }
+                    // Execute the command first
+                    info!("Executing command: {}", command_name);
 
                     let content = match command_name.as_str() {
-                        "guilds" => commands::handle_guilds_command(&command).await,
+                        "guilds" => {
+                            info!("Executing guilds command...");
+                            commands::handle_guilds_command(&command, &self.config).await
+                        },
                         "rank" => commands::handle_rank_command(&command).await,
                         "tournament" => commands::handle_tournament_command(&command).await,
                         _ => {
@@ -97,14 +114,16 @@ impl EventHandler for Handler {
                         }
                     };
 
-                    // Send follow-up response
+                    // Respond immediately with the result
                     if let Err(why) = command
-                        .create_followup_message(&ctx.http, |response| {
-                            response.content(&content)
+                        .create_interaction_response(&ctx.http, |response| {
+                            response
+                                .kind(InteractionResponseType::ChannelMessageWithSource)
+                                .interaction_response_data(|message| message.content(&content))
                         })
                         .await
                     {
-                        error!(command = %command_name, error = %why, "Failed to send follow-up");
+                        error!(command = %command_name, error = %why, "Failed to respond to command");
                     } else {
                         info!(command = %command_name, user = user_id.0, response_length = content.len(), "Command completed successfully");
                     }
@@ -131,6 +150,7 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    dotenv::dotenv().ok();
     // Load configuration
     let config = AppConfig::load()?;
     

@@ -1,9 +1,11 @@
 use serenity::builder::CreateApplicationCommand;
 use serenity::model::application::interaction::application_command::ApplicationCommandInteraction;
 use serenity::model::application::command::CommandOptionType;
+use crate::config::AppConfig;
 use crate::guild_data::{fetch_all_guild_data, sort_guilds, format_guild_list};
 use crate::tournament::{read_members_data, get_tournament_players, fetch_tournament_data_from_sheets};
 use crate::raider_io::PlayerData;
+use crate::types::RaidTier;
 
 pub fn guilds_command(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
     command
@@ -105,14 +107,14 @@ pub fn help_command(command: &mut CreateApplicationCommand) -> &mut CreateApplic
     command.name("help").description("Get information about available commands")
 }
 
-pub async fn handle_guilds_command(command: &ApplicationCommandInteraction) -> String {
+pub async fn handle_guilds_command(command: &ApplicationCommandInteraction, config: &AppConfig) -> String {
     let season = command
         .data
         .options
         .iter()
         .find(|opt| opt.name == "season")
         .and_then(|opt| opt.value.as_ref().and_then(|v| v.as_i64()))
-        .unwrap_or(2) as u8;
+        .unwrap_or(1) as u8;
 
     let limit_str = command
         .data
@@ -128,13 +130,13 @@ pub async fn handle_guilds_command(command: &ApplicationCommandInteraction) -> S
         limit_str.parse().ok()
     };
 
-    match fetch_all_guild_data(season).await {
+    match fetch_all_guild_data(RaidTier::from(season), config).await {
         Ok(guilds) => {
             if guilds.is_empty() {
                 format!("At the moment, there are no guilds with progression in season {}.", season)
             } else {
                 let sorted_guilds = sort_guilds(guilds);
-                format_guild_list(&sorted_guilds, limit)
+                format_guild_list(&sorted_guilds, limit, limit.is_none())
             }
         }
         Err(e) => {
@@ -258,8 +260,8 @@ pub async fn handle_rank_command(command: &ApplicationCommandInteraction) -> Str
                     });
                 } else {
                     players.sort_by(|a, b| {
-                        let a_score = a.rio_all;
-                        let b_score = b.rio_all;
+                        let a_score: u32 = a.rio_all.into();
+                        let b_score: u32 = b.rio_all.into();
                         b_score.cmp(&a_score)
                     });
                 }
@@ -296,7 +298,7 @@ pub async fn handle_rank_command(command: &ApplicationCommandInteraction) -> Str
                     (role.to_string(), get_role_score(player, role))
                 } else {
                     // For "all", show "all" and use rio_all
-                    ("all".to_string(), player.rio_all)
+                    ("all".to_string(), player.rio_all.into())
                 };
 
                 result.push_str(&format!(
@@ -433,19 +435,19 @@ fn validate_role(role_name: &str) -> bool {
 
 fn get_role_score(player: &PlayerData, role: &str) -> u32 {
     match role {
-        "dps" => player.rio_dps,
-        "healer" => player.rio_healer,
-        "tank" => player.rio_tank,
-        _ => player.rio_all,
+        "dps" => player.rio_dps.into(),
+        "healer" => player.rio_healer.into(),
+        "tank" => player.rio_tank.into(),
+        _ => player.rio_all.into(),
     }
 }
 
 fn get_spec_score(player: &PlayerData, spec: u8) -> u32 {
     match spec {
-        0 => player.spec_0,
-        1 => player.spec_1,
-        2 => player.spec_2,
-        3 => player.spec_3,
+        0 => player.spec_0.into(),
+        1 => player.spec_1.into(),
+        2 => player.spec_2.into(),
+        3 => player.spec_3.into(),
         _ => 0,
     }
 }

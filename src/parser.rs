@@ -1,24 +1,27 @@
 use std::collections::HashMap;
 use std::fs;
-use anyhow::Result;
+use crate::config::AppConfig;
+use crate::error::Result;
 use serde_json;
 use crate::raider_io::{RaiderIOClient, PlayerData};
 use crate::guild_data::{read_guild_data, read_additional_characters};
+use crate::types::{PlayerName, RealmName, GuildName, MythicPlusScore};
 use futures::stream::{self, StreamExt};
 
 pub async fn generate_members_data() -> Result<()> {
+    let config = AppConfig::load()?;
     println!("Starting member data generation...");
     
-    let client = RaiderIOClient::new();
+    let client = RaiderIOClient::from_config(&config)?;
     let mut data_dict: HashMap<(String, String), PlayerData> = HashMap::new();
     
     // Read guild URLs
-    let guild_urls = read_guild_data("uaguildlist.txt")?;
+    let guild_urls = read_guild_data(&config.data.guild_list_file)?.into_iter().map(|url| url.to_query_string()).collect::<Vec<_>>();
     println!("Processing {} guilds...", guild_urls.len());
     
     // Process guilds to get member lists
     for (i, url) in guild_urls.iter().enumerate() {
-        if let Ok(guild_data) = fetch_guild_members(&client, url).await {
+        if let Ok(guild_data) = fetch_guild_members(&client, &url).await {
             if let Some(members) = guild_data.get("members").and_then(|m| m.as_array()) {
                 let guild_name = guild_data.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
                 
@@ -32,19 +35,19 @@ pub async fn generate_members_data() -> Result<()> {
                         if !name.is_empty() && name != "Unknown" {
                             let player_key = (realm.clone(), name.clone());
                             data_dict.insert(player_key, PlayerData {
-                                name,
-                                realm,
-                                guild: Some(guild_name.to_string()),
+                                name: PlayerName::from(name),
+                                realm: RealmName::from(realm),
+                                guild: Some(GuildName::from(guild_name.to_string())),
                                 class,
                                 active_spec_name,
-                                rio_all: 0,
-                                rio_dps: 0,
-                                rio_healer: 0,
-                                rio_tank: 0,
-                                spec_0: 0,
-                                spec_1: 0,
-                                spec_2: 0,
-                                spec_3: 0,
+                                rio_all: MythicPlusScore::zero(),
+                                rio_dps: MythicPlusScore::zero(),
+                                rio_healer: MythicPlusScore::zero(),
+                                rio_tank: MythicPlusScore::zero(),
+                                spec_0: MythicPlusScore::zero(),
+                                spec_1: MythicPlusScore::zero(),
+                                spec_2: MythicPlusScore::zero(),
+                                spec_3: MythicPlusScore::zero(),
                             });
                         }
                     }
@@ -60,10 +63,10 @@ pub async fn generate_members_data() -> Result<()> {
     }
     
     // Add additional characters from file
-    if let Ok(additional_chars) = read_additional_characters("addCharacters.txt") {
+    if let Ok(additional_chars) = read_additional_characters(&config.data.additional_characters_file) {
         let count = additional_chars.len();
-        for (realm, name) in &additional_chars {
-            let player_key = (realm.clone(), name.clone());
+        for (name, realm) in &additional_chars {
+            let player_key = (realm.to_string(), name.to_string());
             if !data_dict.contains_key(&player_key) {
                 data_dict.insert(player_key, PlayerData {
                     name: name.clone(),
@@ -71,14 +74,14 @@ pub async fn generate_members_data() -> Result<()> {
                     guild: None,
                     class: None,
                     active_spec_name: None,
-                    rio_all: 0,
-                    rio_dps: 0,
-                    rio_healer: 0,
-                    rio_tank: 0,
-                    spec_0: 0,
-                    spec_1: 0,
-                    spec_2: 0,
-                    spec_3: 0,
+                    rio_all: MythicPlusScore::zero(),
+                    rio_dps: MythicPlusScore::zero(),
+                    rio_healer: MythicPlusScore::zero(),
+                    rio_tank: MythicPlusScore::zero(),
+                    spec_0: MythicPlusScore::zero(),
+                    spec_1: MythicPlusScore::zero(),
+                    spec_2: MythicPlusScore::zero(),
+                    spec_3: MythicPlusScore::zero(),
                 });
             }
         }
@@ -117,7 +120,7 @@ pub async fn generate_members_data() -> Result<()> {
             let max_attempts = 3;
             
             loop {
-                match client.fetch_player_data(&realm, &name, guild.clone()).await {
+                match client.fetch_player_data(&RealmName::from(realm.clone()), &PlayerName::from(name.clone()), guild.clone()).await {
                     Ok(Some(player_data)) => {
                         if (i + 1) % 100 == 0 {
                             println!("Fetched RIO data for: {} ({}/{})", player_data.name, i + 1, total_players);
@@ -129,19 +132,19 @@ pub async fn generate_members_data() -> Result<()> {
                             println!("No RIO data found for: {} - {} ({}/{})", name, realm, i + 1, total_players);
                         }
                         return Some((PlayerData {
-                            name: name.clone(),
-                            realm: realm.clone(), 
+                            name: PlayerName::from(name.clone()),
+                            realm: RealmName::from(realm.clone()), 
                             guild: guild.clone(),
                             class: data_dict.get(&(realm.clone(), name.clone())).and_then(|p| p.class.clone()),
                             active_spec_name: data_dict.get(&(realm.clone(), name.clone())).and_then(|p| p.active_spec_name.clone()),
-                            rio_all: 0,
-                            rio_dps: 0,
-                            rio_healer: 0,
-                            rio_tank: 0,
-                            spec_0: 0,
-                            spec_1: 0,
-                            spec_2: 0,
-                            spec_3: 0,
+                            rio_all: MythicPlusScore::zero(),
+                            rio_dps: MythicPlusScore::zero(),
+                            rio_healer: MythicPlusScore::zero(),
+                            rio_tank: MythicPlusScore::zero(),
+                            spec_0: MythicPlusScore::zero(),
+                            spec_1: MythicPlusScore::zero(),
+                            spec_2: MythicPlusScore::zero(),
+                            spec_3: MythicPlusScore::zero(),
                         }, false, i));
                     }
                     Err(e) => {
@@ -171,19 +174,19 @@ pub async fn generate_members_data() -> Result<()> {
                         }
                         
                         return Some((PlayerData {
-                            name: name.clone(),
-                            realm: realm.clone(),
+                            name: PlayerName::from(name.clone()),
+                            realm: RealmName::from(realm.clone()),
                             guild: guild.clone(),
                             class: data_dict.get(&(realm.clone(), name.clone())).and_then(|p| p.class.clone()),
                             active_spec_name: data_dict.get(&(realm.clone(), name.clone())).and_then(|p| p.active_spec_name.clone()),
-                            rio_all: 0,
-                            rio_dps: 0,
-                            rio_healer: 0,
-                            rio_tank: 0,
-                            spec_0: 0,
-                            spec_1: 0,
-                            spec_2: 0,
-                            spec_3: 0,
+                            rio_all: MythicPlusScore::zero(),
+                            rio_dps: MythicPlusScore::zero(),
+                            rio_healer: MythicPlusScore::zero(),
+                            rio_tank: MythicPlusScore::zero(),
+                            spec_0: MythicPlusScore::zero(),
+                            spec_1: MythicPlusScore::zero(),
+                            spec_2: MythicPlusScore::zero(),
+                            spec_3: MythicPlusScore::zero(),
                         }, false, i));
                     }
                 }
@@ -253,10 +256,12 @@ pub async fn generate_members_data() -> Result<()> {
 
 async fn fetch_guild_members(client: &RaiderIOClient, guild_url: &str) -> Result<serde_json::Value> {
     let url = format!("http://raider.io/api/v1/guilds/profile?region=eu&{}&fields=members", guild_url);
-    let url = client.add_api_key(url);
+    // Since add_api_key is private, we'll handle the API key ourselves
+    // TODO: We should create a public method for this or use a different approach
     
-    let response = client.client.get(&url).send().await?;
-    let guild_data: serde_json::Value = response.json().await?;
+    let http_client = reqwest::Client::new();
+    let response = http_client.get(&url).send().await?;
+    let guild_data: serde_json::Value = response.json().await.map_err(|e| crate::error::BotError::Application(format!("Failed to parse guild JSON: {}", e)))?;
     
     Ok(guild_data)
 }

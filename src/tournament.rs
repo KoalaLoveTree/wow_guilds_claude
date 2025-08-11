@@ -1,7 +1,9 @@
 use std::fs;
 use serde_json;
-use anyhow::Result;
+use crate::config::AppConfig;
+use crate::error::Result;
 use crate::raider_io::{PlayerData, RaiderIOClient};
+use crate::types::{PlayerName, RealmName, GuildName};
 use csv::ReaderBuilder;
 use reqwest::Client;
 
@@ -12,13 +14,14 @@ pub fn read_members_data(file_path: &str) -> Result<Vec<PlayerData>> {
 }
 
 pub async fn fetch_tournament_data_from_sheets(sheet_url: &str) -> Result<Vec<PlayerData>> {
+    let config = AppConfig::load()?;
     let client = Client::new();
     let response = client.get(sheet_url).send().await?;
     let csv_content = response.text().await?;
     
     let mut reader = ReaderBuilder::new().has_headers(false).from_reader(csv_content.as_bytes());
     let mut players = Vec::new();
-    let raider_client = RaiderIOClient::new();
+    let raider_client = RaiderIOClient::from_config(&config)?;
     
     for (i, result) in reader.records().enumerate() {
         if i == 0 {
@@ -31,7 +34,7 @@ pub async fn fetch_tournament_data_from_sheets(sheet_url: &str) -> Result<Vec<Pl
             let realm = record[1].to_string();
             let guild = record[2].to_string();
             
-            if let Ok(Some(player)) = raider_client.fetch_player_data(&realm, &name, Some(guild)).await {
+            if let Ok(Some(player)) = raider_client.fetch_player_data(&RealmName::from(realm), &PlayerName::from(name), Some(GuildName::from(guild))).await {
                 players.push(player);
             }
         }
