@@ -1,48 +1,79 @@
+/// WoW Guild Discord Bot - A Rust implementation for guild progression tracking
 use serenity::async_trait;
 use serenity::model::application::interaction::{Interaction, InteractionResponseType};
 use serenity::model::application::command::Command;
 use serenity::model::gateway::Ready;
 use serenity::prelude::*;
 use std::env;
+use tracing::{error, info, warn};
 
-mod raider_io;
-mod guild_data;
-mod tournament;
+// Module declarations
 mod commands;
+mod config;
+mod error;
+mod guild_data;
+mod logging;
 mod parser;
+mod raider_io;
+mod tournament;
+mod types;
 
-use commands::*;
+// Re-exports for convenience
+use crate::config::AppConfig;
+use crate::error::{BotError, Result};
 
-struct Handler;
+/// Discord event handler
+struct Handler {
+    config: AppConfig,
+}
+
+impl Handler {
+    fn new(config: AppConfig) -> Self {
+        Self { config }
+    }
+}
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        info!(bot_name = %ready.user.name, "Discord bot connected and ready");
 
         let commands = Command::set_global_application_commands(&ctx.http, |commands| {
             commands
-                .create_application_command(|command| guilds_command(command))
-                .create_application_command(|command| rank_command(command))
-                .create_application_command(|command| tournament_command(command))
-                .create_application_command(|command| about_us_command(command))
-                .create_application_command(|command| rules_command(command))
-                .create_application_command(|command| help_command(command))
+                .create_application_command(|command| commands::guilds_command(command))
+                .create_application_command(|command| commands::rank_command(command))
+                .create_application_command(|command| commands::tournament_command(command))
+                .create_application_command(|command| commands::about_us_command(command))
+                .create_application_command(|command| commands::rules_command(command))
+                .create_application_command(|command| commands::help_command(command))
         })
         .await;
 
-        println!("I created the following global slash commands: {:#?}", commands);
+        match commands {
+            Ok(commands) => {
+                info!(registered_commands = commands.len(), "Slash commands registered successfully");
+                for cmd in &commands {
+                    info!(command_name = %cmd.name, "Command registered: {}", cmd.name);
+                }
+            },
+            Err(e) => {
+                error!(error = %e, "Failed to register slash commands");
+            }
+        }
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         if let Interaction::ApplicationCommand(command) = interaction {
-            println!("Received command: {}", command.data.name);
+            let command_name = &command.data.name;
+            let user_id = command.user.id;
+
+            crate::log_discord_command!(command_name, user_id.0);
             
             // For simple commands, respond immediately
-            let content = match command.data.name.as_str() {
-                "about_us" => handle_about_us_command().await,
-                "rules" => handle_rules_command().await,
-                "help" => handle_help_command().await,
+            let content = match command_name.as_str() {
+                "about_us" => commands::handle_about_us_command().await,
+                "rules" => commands::handle_rules_command().await,
+                "help" => commands::handle_help_command().await,
                 _ => {
                     // For complex commands that might take time, defer the response
                     if let Err(why) = command
@@ -52,25 +83,30 @@ impl EventHandler for Handler {
                         })
                         .await
                     {
-                        println!("Failed to defer response: {}", why);
+                        error!(command = %command_name, error = %why, "Failed to defer response");
                         return;
                     }
 
-                    let content = match command.data.name.as_str() {
-                        "guilds" => handle_guilds_command(&command).await,
-                        "rank" => handle_rank_command(&command).await,
-                        "tournament" => handle_tournament_command(&command).await,
-                        _ => "Unknown command".to_string(),
+                    let content = match command_name.as_str() {
+                        "guilds" => commands::handle_guilds_command(&command).await,
+                        "rank" => commands::handle_rank_command(&command).await,
+                        "tournament" => commands::handle_tournament_command(&command).await,
+                        _ => {
+                            warn!(command = %command_name, "Unknown command received");
+                            "❓ Unknown command".to_string()
+                        }
                     };
 
                     // Send follow-up response
                     if let Err(why) = command
                         .create_followup_message(&ctx.http, |response| {
-                            response.content(content)
+                            response.content(&content)
                         })
                         .await
                     {
-                        println!("Failed to send follow-up: {}", why);
+                        error!(command = %command_name, error = %why, "Failed to send follow-up");
+                    } else {
+                        info!(command = %command_name, user = user_id.0, response_length = content.len(), "Command completed successfully");
                     }
                     return;
                 }
@@ -81,42 +117,65 @@ impl EventHandler for Handler {
                 .create_interaction_response(&ctx.http, |response| {
                     response
                         .kind(InteractionResponseType::ChannelMessageWithSource)
-                        .interaction_response_data(|message| message.content(content))
+                        .interaction_response_data(|message| message.content(&content))
                 })
                 .await
             {
-                println!("Cannot respond to slash command: {}", why);
+                error!(command = %command_name, error = %why, "Cannot respond to slash command");
+            } else {
+                info!(command = %command_name, user = user_id.0, response_length = content.len(), "Command completed successfully");
             }
         }
     }
 }
 
 #[tokio::main]
-async fn main() {
-    dotenv::dotenv().ok();
+async fn main() -> Result<()> {
+    // Load configuration
+    let config = AppConfig::load()?;
     
+    // Initialize logging
+    logging::init_logging(&config.logging)?;
+    info!("WoW Guild Bot starting up...");
+
     let args: Vec<String> = env::args().collect();
     
     // Check if user wants to run the parser
     if args.len() > 1 && args[1] == "parse" {
-        println!("Running parser to generate members.json...");
+        info!("Running parser to generate members.json...");
         match parser::generate_members_data().await {
-            Ok(()) => println!("Parser completed successfully!"),
-            Err(e) => eprintln!("Parser failed: {}", e),
+            Ok(()) => {
+                info!("Parser completed successfully!");
+                Ok(())
+            },
+            Err(e) => {
+                error!(error = %e, "Parser failed");
+                Err(BotError::from(e))
+            }
         }
-        return;
+    } else {
+        // Run Discord bot
+        run_discord_bot(config).await
     }
-    
-    // Run Discord bot by default
-    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+}
 
-    let mut client =
-        Client::builder(&token, GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES)
-            .event_handler(Handler)
-            .await
-            .expect("Err creating client");
+/// Run the Discord bot with the given configuration
+async fn run_discord_bot(config: AppConfig) -> Result<()> {
+    info!("Starting Discord bot...");
 
-    if let Err(why) = client.start().await {
-        println!("Client error: {:?}", why);
-    }
+    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES;
+
+    let mut client = Client::builder(&config.discord.token, intents)
+        .event_handler(Handler::new(config))
+        .await
+        .map_err(|e| BotError::Discord(e))?;
+
+    info!("Discord client created successfully, starting event loop...");
+
+    client.start().await.map_err(|e| {
+        error!(error = %e, "Discord client error");
+        BotError::Discord(e)
+    })?;
+
+    Ok(())
 }
