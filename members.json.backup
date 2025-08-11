@@ -1,0 +1,62 @@
+[
+  {
+    "name": "TestPlayer1",
+    "realm": "Stormrage",
+    "guild": "Test Guild",
+    "class": "Warrior",
+    "active_spec_name": "Arms",
+    "rio_all": 2500,
+    "rio_dps": 2500,
+    "rio_healer": 0,
+    "rio_tank": 1800,
+    "spec_0": 2500,
+    "spec_1": 1800,
+    "spec_2": 0,
+    "spec_3": 0
+  },
+  {
+    "name": "TestPlayer2",
+    "realm": "Stormrage", 
+    "guild": "Test Guild",
+    "class": "Priest",
+    "active_spec_name": "Holy",
+    "rio_all": 2300,
+    "rio_dps": 1900,
+    "rio_healer": 2300,
+    "rio_tank": 0,
+    "spec_0": 1900,
+    "spec_1": 2000,
+    "spec_2": 2300,
+    "spec_3": 0
+  },
+  {
+    "name": "TestPlayer3",
+    "realm": "Area-52",
+    "guild": "Another Guild",
+    "class": "Death Knight", 
+    "active_spec_name": "Blood",
+    "rio_all": 2700,
+    "rio_dps": 2200,
+    "rio_healer": 0,
+    "rio_tank": 2700,
+    "spec_0": 2700,
+    "spec_1": 2200,
+    "spec_2": 1500,
+    "spec_3": 0
+  },
+  {
+    "name": "MonkPlayer",
+    "realm": "Stormrage",
+    "guild": "Test Guild",
+    "class": "Monk",
+    "active_spec_name": "Windwalker",
+    "rio_all": 2400,
+    "rio_dps": 2400,
+    "rio_healer": 1900,
+    "rio_tank": 2100,
+    "spec_0": 1900,
+    "spec_1": 2100,
+    "spec_2": 2400,
+    "spec_3": 0
+  }
+]
