@@ -49,11 +49,12 @@ macro_rules! log_discord_command {
 /// Discord event handler
 struct Handler {
     config: AppConfig,
+    database: Database,
 }
 
 impl Handler {
-    fn new(config: AppConfig) -> Self {
-        Self { config }
+    fn new(config: AppConfig, database: Database) -> Self {
+        Self { config, database }
     }
 }
 
@@ -117,7 +118,7 @@ impl EventHandler for Handler {
                             info!("Executing guilds command...");
                             commands::handle_guilds_command(&command, &self.config).await
                         },
-                        "rank" => commands::handle_rank_command(&command).await,
+                        "rank" => commands::handle_rank_command(&command, &self.database).await,
                         _ => {
                             warn!(command = %command_name, "Unknown command received");
                             "❓ Unknown command".to_string()
@@ -190,7 +191,7 @@ async fn main() -> Result<()> {
         Ok(())
     } else {
         // Run Discord bot
-        run_discord_bot(config).await
+        run_discord_bot(config, database).await
     }
 }
 
@@ -225,13 +226,13 @@ async fn show_database_status(database: &Database) -> Result<()> {
 }
 
 /// Run the Discord bot with the given configuration
-async fn run_discord_bot(config: AppConfig) -> Result<()> {
+async fn run_discord_bot(config: AppConfig, database: Database) -> Result<()> {
     info!("Starting Discord bot...");
 
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES;
 
     let mut client = Client::builder(&config.discord.token, intents)
-        .event_handler(Handler::new(config))
+        .event_handler(Handler::new(config, database))
         .await
         .map_err(|e| BotError::Discord(e))?;
 

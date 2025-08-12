@@ -587,6 +587,44 @@ impl Database {
         Ok(members)
     }
 
+    /// Get all members from database (for rank command)
+    pub async fn get_all_members(&self) -> Result<Vec<DbMember>> {
+        let rows = sqlx::query(r#"
+            SELECT id, name, realm, guild_name, guild_realm, class, spec, 
+                   rio_score, ilvl, rio_all, rio_dps, rio_healer, rio_tank,
+                   spec_0, spec_1, spec_2, spec_3, updated_at
+            FROM members
+        "#)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| BotError::Database(format!("Failed to fetch members: {}", e)))?;
+
+        let members = rows.into_iter().map(|row| {
+            DbMember {
+                id: row.get("id"),
+                name: row.get("name"),
+                realm: row.get("realm"),
+                guild_name: row.get("guild_name"),
+                guild_realm: row.get("guild_realm"),
+                class: row.get("class"),
+                spec: row.get("spec"),
+                rio_score: row.get("rio_score"),
+                ilvl: row.get("ilvl"),
+                rio_all: row.get("rio_all"),
+                rio_dps: row.get("rio_dps"),
+                rio_healer: row.get("rio_healer"),
+                rio_tank: row.get("rio_tank"),
+                spec_0: row.get("spec_0"),
+                spec_1: row.get("spec_1"),
+                spec_2: row.get("spec_2"),
+                spec_3: row.get("spec_3"),
+                updated_at: row.get("updated_at"),
+            }
+        }).collect();
+
+        Ok(members)
+    }
+
     /// Get database statistics
     pub async fn get_stats(&self) -> Result<(usize, usize)> {
         let guild_count = sqlx::query("SELECT COUNT(*) as count FROM guilds")

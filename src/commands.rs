@@ -2,9 +2,10 @@ use serenity::builder::CreateApplicationCommand;
 use serenity::model::application::interaction::application_command::ApplicationCommandInteraction;
 use serenity::model::application::command::CommandOptionType;
 use crate::config::AppConfig;
+use crate::database::{Database, DbMember};
 use crate::guild_data::{fetch_all_guild_data, sort_guilds, format_guild_list};
 use crate::raider_io::PlayerData;
-use crate::types::RaidTier;
+use crate::types::{RaidTier, PlayerName, RealmName, GuildName, MythicPlusScore};
 
 pub fn guilds_command(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
     command
@@ -119,7 +120,7 @@ pub async fn handle_guilds_command(command: &ApplicationCommandInteraction, conf
     }
 }
 
-pub async fn handle_rank_command(command: &ApplicationCommandInteraction) -> String {
+pub async fn handle_rank_command(command: &ApplicationCommandInteraction, database: &Database) -> String {
     let top = command
         .data
         .options
@@ -179,12 +180,11 @@ pub async fn handle_rank_command(command: &ApplicationCommandInteraction) -> Str
         return format!("Role '{}' does not exist. Use the valid roles: all, dps, healer, tank.", role);
     }
 
-    // TODO: Replace with database query
-    match std::fs::read_to_string("members.json").and_then(|content| {
-        serde_json::from_str::<Vec<PlayerData>>(&content).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-    }) {
-        Ok(mut players) => {
-            println!("Loaded {} players from members.json", players.len());
+    // Get members from database
+    match database.get_all_members().await {
+        Ok(db_members) => {
+            let mut players: Vec<PlayerData> = db_members.iter().map(db_member_to_player_data).collect();
+            println!("Loaded {} players from database", players.len());
             println!("Filtering: class='{}', role='{}', guilds='{}', rio>{}", class_filter, role, guilds, rio);
             
             // Filter by guild
@@ -293,7 +293,7 @@ pub async fn handle_rank_command(command: &ApplicationCommandInteraction) -> Str
             result
         }
         Err(e) => {
-            format!("No data to process: {}. Complete the 'members.json' file before using this command.", e)
+            format!("No data to process: {}. Check that the database contains member data.", e)
         }
     }
 }
@@ -378,5 +378,24 @@ fn get_spec_score(player: &PlayerData, spec: u8) -> u32 {
         2 => player.spec_2.into(),
         3 => player.spec_3.into(),
         _ => 0,
+    }
+}
+
+/// Convert DbMember to PlayerData for compatibility with existing logic
+fn db_member_to_player_data(db_member: &DbMember) -> PlayerData {
+    PlayerData {
+        name: PlayerName::from(db_member.name.clone()),
+        realm: RealmName::from(db_member.realm.clone()),
+        guild: db_member.guild_name.as_ref().map(|g| GuildName::from(g.clone())),
+        class: db_member.class.clone(),
+        active_spec_name: db_member.spec.clone(),
+        rio_all: MythicPlusScore::from(db_member.rio_all as u32),
+        rio_dps: MythicPlusScore::from(db_member.rio_dps as u32),
+        rio_healer: MythicPlusScore::from(db_member.rio_healer as u32),
+        rio_tank: MythicPlusScore::from(db_member.rio_tank as u32),
+        spec_0: MythicPlusScore::from(db_member.spec_0 as u32),
+        spec_1: MythicPlusScore::from(db_member.spec_1 as u32),
+        spec_2: MythicPlusScore::from(db_member.spec_2 as u32),
+        spec_3: MythicPlusScore::from(db_member.spec_3 as u32),
     }
 }
