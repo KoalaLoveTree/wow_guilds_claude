@@ -1,0 +1,116 @@
+{
+  "timestamp": "2025-08-12T02:19:33.880343619Z",
+  "request_type": "guild_profile",
+  "url": "https://raider.io/api/v1/guilds/profile?region=eu&realm=silvermoon&name=BAPTA%20KOTIB&fields=raid_rankings,raid_progression&access_key=RIOLbg1VCrXWMeEb5kx8Qg7dE",
+  "response_status": 200,
+  "response_data": {
+    "displayName": null,
+    "faction": "alliance",
+    "last_crawled_at": "2025-08-09T10:27:42.000Z",
+    "name": "BAPTA KOTIB",
+    "profile_url": "https://raider.io/guilds/eu/silvermoon/BAPTA%20KOTIB",
+    "raid_progression": {
+      "blackrock-depths": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "8/8 H",
+        "total_bosses": 8
+      },
+      "liberation-of-undermine": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 8,
+        "summary": "8/8 H",
+        "total_bosses": 8
+      },
+      "manaforge-omega": {
+        "heroic_bosses_killed": 0,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "0/8 N",
+        "total_bosses": 8
+      },
+      "nerubar-palace": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 4,
+        "normal_bosses_killed": 8,
+        "summary": "4/8 M",
+        "total_bosses": 8
+      }
+    },
+    "raid_rankings": {
+      "blackrock-depths": {
+        "heroic": {
+          "realm": 20,
+          "region": 345,
+          "world": 571
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "liberation-of-undermine": {
+        "heroic": {
+          "realm": 257,
+          "region": 4390,
+          "world": 9654
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 179,
+          "region": 3249,
+          "world": 7130
+        }
+      },
+      "manaforge-omega": {
+        "heroic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "nerubar-palace": {
+        "heroic": {
+          "realm": 181,
+          "region": 3228,
+          "world": 5903
+        },
+        "mythic": {
+          "realm": 153,
+          "region": 2759,
+          "world": 5164
+        },
+        "normal": {
+          "realm": 43,
+          "region": 827,
+          "world": 1455
+        }
+      }
+    },
+    "realm": "Silvermoon",
+    "region": "eu"
+  },
+  "error": null
+}

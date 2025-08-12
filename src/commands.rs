@@ -114,7 +114,7 @@ pub async fn handle_guilds_command(command: &ApplicationCommandInteraction, conf
         .iter()
         .find(|opt| opt.name == "season")
         .and_then(|opt| opt.value.as_ref().and_then(|v| v.as_i64()))
-        .unwrap_or(1) as u8;
+        .unwrap_or(2) as u8;
 
     let limit_str = command
         .data

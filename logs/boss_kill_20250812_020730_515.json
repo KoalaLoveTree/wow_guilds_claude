@@ -1,0 +1,84 @@
+{
+  "timestamp": "2025-08-12T02:07:30.515757268Z",
+  "request_type": "boss_kill",
+  "url": "https://raider.io/api/guilds/boss-kills?raid=liberation-of-undermine&difficulty=mythic&region=eu&realm=ravencrest&guild=Viysko%20NightElfiyske&boss=sprocketmonger-lockenstock",
+  "response_status": 200,
+  "response_data": {
+    "killDetails": {
+      "attempt": {
+        "bestPercent": 51.21,
+        "lastPullAt": "2025-06-29T19:50:01.012Z",
+        "pullCount": 99,
+        "pullStartedAt": "2025-05-18T17:56:39.018Z"
+      },
+      "boss": {
+        "encounterId": 197113,
+        "iconUrl": "/images/wow/icons/large/inv_111_raid_achievement_sprocketmongerlocknstock.jpg",
+        "name": "Sprocketmonger Lockenstock",
+        "ordinal": 4,
+        "slug": "sprocketmonger-lockenstock",
+        "wingId": 0
+      },
+      "canManageOthersVideos": false,
+      "canManageOwnVideos": false,
+      "guild": {
+        "displayName": "Viysko NightElfiyske",
+        "faction": "alliance",
+        "id": 2039989,
+        "isDefaultLogo": true,
+        "logo": "https://cdn.raiderio.net/images/site/alliance_icon4.png",
+        "name": "Viysko NightElfiyske",
+        "path": "/guilds/eu/ravencrest/Viysko%20NightElfiyske",
+        "realm": {
+          "altName": null,
+          "altSlug": "ravencrest",
+          "connectedRealmId": 353,
+          "id": 689,
+          "isConnected": false,
+          "locale": "en_GB",
+          "name": "Ravencrest",
+          "realmType": "live",
+          "slug": "ravencrest",
+          "wowConnectedRealmId": 1329,
+          "wowRealmId": 554
+        },
+        "region": {
+          "name": "Europe",
+          "short_name": "EU",
+          "slug": "eu"
+        }
+      },
+      "guildPrivacy": {
+        "raidComps": true,
+        "raidPercents": true,
+        "raidPulls": true,
+        "shareRaidUntil": null,
+        "wereRaidCompsRestricted": false,
+        "wereRaidPercentsRestricted": false,
+        "wereRaidPullsRestricted": false
+      },
+      "isAttempt": true,
+      "raid": {
+        "difficulty": "mythic",
+        "expansion_id": 10,
+        "icon_url": "/images/wow/icons/large/inv_achievement_zone_undermine.jpg",
+        "id": 15522,
+        "name": "Liberation of Undermine",
+        "short_name": "LOU",
+        "slug": "liberation-of-undermine",
+        "type": "raid",
+        "wowInstanceId": 2769
+      },
+      "ui": {
+        "boss": "sprocketmonger-lockenstock",
+        "difficulty": "mythic",
+        "guild": "Viysko NightElfiyske",
+        "raid": "liberation-of-undermine",
+        "realm": "ravencrest",
+        "region": "eu"
+      },
+      "videos": []
+    }
+  },
+  "error": null
+}

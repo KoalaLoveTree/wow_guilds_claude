@@ -142,6 +142,25 @@ impl RealmName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Returns the realm name formatted for display with proper capitalization and spaces
+    pub fn display_name(&self) -> String {
+        self.0
+            .split('-')
+            .map(|word| {
+                if word.is_empty() {
+                    String::new()
+                } else {
+                    let mut chars = word.chars();
+                    match chars.next() {
+                        None => String::new(),
+                        Some(first) => first.to_uppercase().collect::<String>() + &chars.collect::<String>()
+                    }
+                }
+            })
+            .collect::<Vec<String>>()
+            .join(" ")
+    }
 }
 
 impl Deref for RealmName {
@@ -412,7 +431,12 @@ impl GuildUrl {
     }
 
     pub fn to_query_string(&self) -> String {
-        format!("realm={}&name={}", self.realm, self.name)
+        // URL encode the guild name to handle spaces and special characters
+        let realm_string = self.realm.to_string();
+        let name_string = self.name.to_string();
+        let encoded_realm = urlencoding::encode(&realm_string);
+        let encoded_name = urlencoding::encode(&name_string);
+        format!("realm={}&name={}", encoded_realm, encoded_name)
     }
 }
 

@@ -1,0 +1,84 @@
+{
+  "timestamp": "2025-08-12T02:07:32.052541578Z",
+  "request_type": "boss_kill",
+  "url": "https://raider.io/api/guilds/boss-kills?raid=liberation-of-undermine&difficulty=heroic&region=eu&realm=draenor&guild=Ukrainian%20Cossacks&boss=mugzee-heads-of-security",
+  "response_status": 200,
+  "response_data": {
+    "killDetails": {
+      "attempt": {
+        "bestPercent": 8.84,
+        "lastPullAt": "2025-04-08T20:05:27.572Z",
+        "pullCount": 10,
+        "pullStartedAt": "2025-04-08T19:21:55.951Z"
+      },
+      "boss": {
+        "encounterId": 197115,
+        "iconUrl": "/images/wow/icons/large/inv_111_raid_achievement_mugzeeheadsofsecurity.jpg",
+        "name": "Mug'Zee, Heads of Security",
+        "ordinal": 6,
+        "slug": "mugzee-heads-of-security",
+        "wingId": 0
+      },
+      "canManageOthersVideos": false,
+      "canManageOwnVideos": false,
+      "guild": {
+        "displayName": "Ukrainian Cossacks",
+        "faction": "horde",
+        "id": 1959453,
+        "isDefaultLogo": true,
+        "logo": "https://cdn.raiderio.net/images/site/horde_icon4.png",
+        "name": "Ukrainian Cossacks",
+        "path": "/guilds/eu/draenor/Ukrainian%20Cossacks",
+        "realm": {
+          "altName": null,
+          "altSlug": "draenor",
+          "connectedRealmId": 308,
+          "id": 579,
+          "isConnected": false,
+          "locale": "en_GB",
+          "name": "Draenor",
+          "realmType": "live",
+          "slug": "draenor",
+          "wowConnectedRealmId": 1403,
+          "wowRealmId": 506
+        },
+        "region": {
+          "name": "Europe",
+          "short_name": "EU",
+          "slug": "eu"
+        }
+      },
+      "guildPrivacy": {
+        "raidComps": true,
+        "raidPercents": true,
+        "raidPulls": true,
+        "shareRaidUntil": null,
+        "wereRaidCompsRestricted": false,
+        "wereRaidPercentsRestricted": false,
+        "wereRaidPullsRestricted": false
+      },
+      "isAttempt": true,
+      "raid": {
+        "difficulty": "heroic",
+        "expansion_id": 10,
+        "icon_url": "/images/wow/icons/large/inv_achievement_zone_undermine.jpg",
+        "id": 15522,
+        "name": "Liberation of Undermine",
+        "short_name": "LOU",
+        "slug": "liberation-of-undermine",
+        "type": "raid",
+        "wowInstanceId": 2769
+      },
+      "ui": {
+        "boss": "mugzee-heads-of-security",
+        "difficulty": "heroic",
+        "guild": "Ukrainian Cossacks",
+        "raid": "liberation-of-undermine",
+        "realm": "draenor",
+        "region": "eu"
+      },
+      "videos": []
+    }
+  },
+  "error": null
+}

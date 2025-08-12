@@ -1,4 +1,5 @@
 /// Raider.io API client with proper error handling and type safety
+use crate::api_logger;
 use crate::config::AppConfig;
 use crate::error::{BotError, Result};
 use crate::types::{GuildName, GuildUrl, MythicPlusScore, PlayerName, RaidTier, RealmName, Season, WorldRank};
@@ -18,7 +19,7 @@ pub struct GuildData {
     pub progress: String,
     pub rank: Option<WorldRank>,
     pub best_percent: f64,
-    pub pull_count: u32,
+    pub pull_count: Option<u32>,
 }
 
 /// Player mythic+ data from raider.io
@@ -69,11 +70,21 @@ struct MythicRanking {
 /// Boss kill response from raider.io
 #[derive(Debug, Clone, Deserialize)]
 struct BossKillResponse {
+    kill: Option<KillInfo>,
     #[serde(rename = "killDetails")]
-    kill_details: Option<KillDetails>,
+    kill_details: Option<KillDetails>, // Backup field for different API versions
 }
 
-/// Kill details for boss encounters
+/// Kill information
+#[derive(Debug, Clone, Deserialize)]
+struct KillInfo {
+    #[serde(rename = "isSuccess")]
+    is_success: Option<bool>,
+    #[serde(rename = "durationMs")]
+    duration_ms: Option<u64>,
+}
+
+/// Kill details for boss encounters (alternative format)
 #[derive(Debug, Clone, Deserialize)]
 struct KillDetails {
     attempt: Option<AttemptDetails>,
@@ -178,6 +189,20 @@ impl RaiderIOClient {
         }
     }
 
+    /// Get boss names for liberation-of-undermine raid
+    fn get_liberation_boss_names() -> &'static [&'static str] {
+        &[
+            "vexie-and-the-geargrinders",
+            "cauldron-of-carnage", 
+            "rik-reverb",
+            "stix-bunkjunker",
+            "sprocketmonger-lockenstock",
+            "onearmed-bandit",
+            "mugzee-heads-of-security",
+            "chrome-king-gallywix"
+        ]
+    }
+
     /// Fetch guild raid progression data
     #[instrument(skip(self), fields(guild = %guild_url.name, realm = %guild_url.realm, tier = %tier))]
     pub async fn fetch_guild_data(&self, guild_url: &GuildUrl, tier: RaidTier) -> Result<Option<GuildData>> {
@@ -209,15 +234,34 @@ impl RaiderIOClient {
         if !response.status().is_success() {
             if status == StatusCode::NOT_FOUND {
                 warn!("Guild not found: {}/{}", guild_url.realm, guild_url.name);
+                // Log the error response
+                if let Some(logger) = api_logger::get_api_logger() {
+                    logger.log_error("guild_profile", &url, status.as_u16(), "Guild not found").await;
+                }
                 return Ok(None);
+            }
+            // Log other errors
+            if let Some(logger) = api_logger::get_api_logger() {
+                logger.log_error("guild_profile", &url, status.as_u16(), &format!("HTTP error: {}", status)).await;
             }
             return Err(BotError::from(status));
         }
 
-        let guild_data: RaiderIOGuildResponse = response
-            .json()
-            .await
+        let response_text = response.text().await.map_err(BotError::Http)?;
+        
+        // Parse the JSON and log the successful response
+        let guild_data: RaiderIOGuildResponse = serde_json::from_str(&response_text)
             .map_err(|e| BotError::Application(format!("Failed to parse JSON: {}", e)))?;
+        
+        // Log successful response
+        if let Some(logger) = api_logger::get_api_logger() {
+            if let Ok(response_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                logger.log_guild_profile(&url, status.as_u16(), response_json).await;
+            }
+        }
+
+        debug!("Looking for raid_name: '{}' in raid_progression keys: {:?}", raid_name, guild_data.raid_progression.keys().collect::<Vec<_>>());
+        debug!("Looking for raid_name: '{}' in raid_rankings keys: {:?}", raid_name, guild_data.raid_rankings.keys().collect::<Vec<_>>());
 
         let progress = guild_data
             .raid_progression
@@ -230,12 +274,41 @@ impl RaiderIOClient {
             .get(raid_name)
             .and_then(|r| r.mythic.world)
             .map(WorldRank::from);
+            
+        debug!("Parsed progress: '{}', rank: {:?}", progress, rank);
 
         // Fetch best percent and pull count
-        let (best_percent, pull_count) = self
-            .fetch_boss_kill_data(&guild_url.realm, &guild_url.name, raid_name, 'M')
+        let (best_percent, pull_count) = match self
+            .fetch_boss_kill_data(&guild_url.realm, &guild_url.name, raid_name, tier, &progress)
             .await
-            .unwrap_or((0.0, 0));
+        {
+            Ok((percent, count)) => {
+                debug!("Boss kill data retrieved: {}% best, {:?} pulls", percent, count);
+                (percent, count)
+            },
+            Err(e) => {
+                warn!("Failed to fetch boss kill data for {}/{}: {}", guild_url.realm, guild_url.name, e);
+                // For guilds with progression but no detailed boss data, 
+                // still show meaningful progression instead of zeros
+                if progress.contains("8/8") {
+                    (100.0, None) // Full clear
+                } else if progress.contains("M") {
+                    // Has mythic progression - estimate based on progress
+                    if let Some(kills) = progress.split('/').next().and_then(|s| s.parse::<u32>().ok()) {
+                        let percent = (kills as f64 / 8.0) * 100.0;
+                        (percent, None) // Use calculated percentage
+                    } else {
+                        (75.0, None) // Fallback for mythic guilds
+                    }
+                } else if progress.contains("H") {
+                    (25.0, None) // Heroic progression
+                } else if !progress.starts_with("0/") && progress != "No progress" {
+                    (10.0, None) // Some normal progression
+                } else {
+                    (0.0, None) // No progress at all
+                }
+            }
+        };
 
         let guild_data = GuildData {
             name: guild_url.name.clone(),
@@ -251,29 +324,63 @@ impl RaiderIOClient {
     }
 
     /// Fetch boss kill data for detailed progression info
-    #[instrument(skip(self), fields(guild = %guild, realm = %realm, raid = raid, difficulty = %difficulty))]
+    #[instrument(skip(self), fields(guild = %guild, realm = %realm, raid = raid, progress = progress))]
     async fn fetch_boss_kill_data(
         &self,
         realm: &RealmName,
         guild: &GuildName,
         raid: &str,
-        difficulty: char,
-    ) -> Result<(f64, u32)> {
-        let difficulty_suffix = match difficulty {
-            'M' => "&difficulty=mythic&region=eu&",
-            'H' => "&difficulty=heroic&region=eu&",
-            'N' => "&difficulty=normal&region=eu&",
-            _ => "&difficulty=normal&region=eu&",
+        tier: RaidTier,
+        progress: &str,
+    ) -> Result<(f64, Option<u32>)> {
+        // Parse the difficulty from progress (e.g., "3/8 M" -> 'M')
+        let difficulty_char = progress.chars().last().unwrap_or('N');
+        let difficulty = match difficulty_char {
+            'M' => "mythic",
+            'H' => "heroic", 
+            'N' => "normal",
+            _ => "normal",
         };
 
-        // Get the last boss for the raid (simplified - using boss=1 for now)
-        let boss_id = 1;
+        // Parse current progress to determine best boss to query for kill data
+        let current_progress = progress.split('/').next()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(0);
+        
+        // If full clear (8/8), return perfect progression
+        if current_progress >= 8 {
+            return Ok((100.0, None)); // Full clear, perfect score
+        }
+        
+        // Get boss name for NEXT progression (like Python bot)
+        let boss_name = if tier.value() == 2 { // liberation-of-undermine
+            // For progression data, get the NEXT boss they're working on
+            // If they're 5/8, get the 6th boss (index 5)
+            if current_progress < 8 {
+                Self::get_liberation_boss_names().get(current_progress).copied()
+            } else {
+                // Full clear, no next boss
+                return Ok((100.0, None));
+            }
+        } else if tier.value() == 1 { // nerubar-palace
+            // Add Nerubar Palace boss names if needed
+            Some("ulgrax-the-devourer") // First boss as fallback
+        } else {
+            Some("first-boss") // Generic fallback
+        };
+
+        let boss_name = match boss_name {
+            Some(name) => name,
+            None => return Ok((0.0, None)), // No boss data available
+        };
         
         let url = format!(
-            "https://raider.io/api/guilds/boss-kills?raid={}{}&realm={}&guild={}&boss={}",
-            raid, difficulty_suffix, realm, guild, boss_id
+            "https://raider.io/api/guilds/boss-kills?raid={}&difficulty={}&region=eu&realm={}&guild={}&boss={}",
+            raid, difficulty, 
+            urlencoding::encode(&realm.to_string()),
+            urlencoding::encode(&guild.to_string()),
+            boss_name
         );
-        let url = self.add_api_key(url);
 
         debug!("Fetching boss kill data from: {}", url);
 
@@ -284,33 +391,165 @@ impl RaiderIOClient {
             .await
             .map_err(BotError::Http)?;
         
-        if response.status() == StatusCode::UNPROCESSABLE_ENTITY {
+        let status = response.status();
+        
+        if status == StatusCode::UNPROCESSABLE_ENTITY {
             debug!("Boss kill data not available (422 response)");
-            return Ok((100.0, 0));
+            // Log 422 error
+            if let Some(logger) = api_logger::get_api_logger() {
+                logger.log_boss_kill_error(&url, status.as_u16(), "Boss kill data not available (422)").await;
+            }
+            return Ok((100.0, None));
         }
 
-        if !response.status().is_success() {
-            warn!("Failed to fetch boss kill data: {}", response.status());
-            return Ok((0.0, 0));
+        if !status.is_success() {
+            warn!("Failed to fetch boss kill data: {}", status);
+            // Log other errors
+            if let Some(logger) = api_logger::get_api_logger() {
+                logger.log_boss_kill_error(&url, status.as_u16(), &format!("HTTP error: {}", status)).await;
+            }
+            return Ok((0.0, None));
         }
 
-        let boss_data: BossKillResponse = response
-            .json()
-            .await
+        let response_text = response.text().await
+            .map_err(|e| BotError::Application(format!("Failed to get response text: {}", e)))?;
+        
+        // Log successful response
+        if let Some(logger) = api_logger::get_api_logger() {
+            if let Ok(response_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                logger.log_boss_kill(&url, status.as_u16(), response_json).await;
+            }
+        }
+        
+        // Handle empty JSON response ({})
+        if response_text.trim() == "{}" {
+            debug!("Empty JSON response - boss not killed yet");
+            // For current progress bosses that aren't killed yet, try the next boss
+            if current_progress < 8 {
+                return self.try_next_boss_kill_data(realm, guild, raid, tier, current_progress, difficulty).await;
+            }
+            return Ok((0.0, None));
+        }
+
+        let boss_data: BossKillResponse = serde_json::from_str(&response_text)
             .map_err(|e| BotError::Application(format!("Failed to parse JSON: {}", e)))?;
 
-        let (best_percent, pull_count) = boss_data
-            .kill_details
-            .and_then(|kd| kd.attempt)
-            .map(|attempt| {
-                (
-                    attempt.best_percent.unwrap_or(0.0),
-                    attempt.pull_count.unwrap_or(0),
-                )
-            })
-            .unwrap_or((0.0, 0));
+        let (best_percent, pull_count) = if let Some(kill_details) = boss_data.kill_details {
+            // Use killDetails format (like Python bot)
+            kill_details
+                .attempt
+                .map(|attempt| {
+                    let percent = attempt.best_percent.unwrap_or(100.0);
+                    let pulls = attempt.pull_count;
+                    (percent, pulls)
+                })
+                .unwrap_or((100.0, None))
+        } else if let Some(kill) = boss_data.kill {
+            // Fallback to kill format if available
+            if kill.is_success.unwrap_or(false) {
+                (100.0, Some(1)) // Killed boss = 100% completion
+            } else {
+                (0.0, None) // Failed attempt
+            }
+        } else {
+            (100.0, None) // No kill data available, assume completed
+        };
 
-        debug!("Boss kill data: {}% best, {} pulls", best_percent, pull_count);
+        debug!("Boss kill data: {}% best, {:?} pulls", best_percent, pull_count);
+        Ok((best_percent, pull_count))
+    }
+    
+    /// Try to get kill data from the next boss in progression
+    async fn try_next_boss_kill_data(
+        &self,
+        realm: &RealmName,
+        guild: &GuildName,
+        raid: &str,
+        tier: RaidTier,
+        current_progress: usize,
+        difficulty: &str,
+    ) -> Result<(f64, Option<u32>)> {
+        // Try the next boss (current progress index)
+        let next_boss_name = if tier.value() == 2 { // liberation-of-undermine
+            Self::get_liberation_boss_names().get(current_progress).copied()
+        } else {
+            None
+        };
+        
+        let Some(next_boss_name) = next_boss_name else {
+            debug!("No next boss available for current progress: {}", current_progress);
+            return Ok((0.0, None));
+        };
+        
+        let url = format!(
+            "https://raider.io/api/guilds/boss-kills?raid={}&difficulty={}&region=eu&realm={}&guild={}&boss={}",
+            raid, difficulty, 
+            urlencoding::encode(&realm.to_string()),
+            urlencoding::encode(&guild.to_string()),
+            next_boss_name
+        );
+
+        debug!("Trying next boss kill data from: {}", url);
+        
+        let response = self.client
+            .get(&url)
+            .header("x-request-id", &self.request_id_header)
+            .send()
+            .await
+            .map_err(BotError::Http)?;
+        
+        let status = response.status();
+        
+        if !status.is_success() {
+            debug!("Next boss kill data not available: {}", status);
+            // Log error
+            if let Some(logger) = api_logger::get_api_logger() {
+                logger.log_boss_kill_error(&url, status.as_u16(), &format!("Next boss kill data not available: {}", status)).await;
+            }
+            return Ok((0.0, None));
+        }
+        
+        let response_text = response.text().await
+            .map_err(|e| BotError::Application(format!("Failed to get response text: {}", e)))?;
+        
+        // Log successful response
+        if let Some(logger) = api_logger::get_api_logger() {
+            if let Ok(response_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
+                logger.log_boss_kill(&url, status.as_u16(), response_json).await;
+            }
+        }
+        
+        // Handle empty JSON response for next boss too
+        if response_text.trim() == "{}" {
+            debug!("Next boss also not killed yet - using default values");
+            return Ok((0.0, None));
+        }
+        
+        let boss_data: BossKillResponse = serde_json::from_str(&response_text)
+            .map_err(|e| BotError::Application(format!("Failed to parse next boss JSON: {}", e)))?;
+
+        let (best_percent, pull_count) = if let Some(kill_details) = boss_data.kill_details {
+            // Use killDetails format (preferred, like main function)
+            kill_details
+                .attempt
+                .map(|attempt| {
+                    let percent = attempt.best_percent.unwrap_or(0.0);
+                    let pulls = attempt.pull_count;
+                    (percent, pulls)
+                })
+                .unwrap_or((0.0, None))
+        } else if let Some(kill) = boss_data.kill {
+            // Fallback to kill format if available
+            if kill.is_success.unwrap_or(false) {
+                (100.0, Some(1)) // Killed boss = 100% completion
+            } else {
+                (0.0, None) // Failed attempt
+            }
+        } else {
+            (0.0, None) // No kill data available
+        };
+        
+        debug!("Next boss kill data: {}% best, {:?} pulls", best_percent, pull_count);
         Ok((best_percent, pull_count))
     }
 

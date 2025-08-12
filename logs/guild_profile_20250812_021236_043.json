@@ -1,0 +1,116 @@
+{
+  "timestamp": "2025-08-12T02:12:36.043148447Z",
+  "request_type": "guild_profile",
+  "url": "https://raider.io/api/v1/guilds/profile?region=eu&realm=ravencrest&name=Ababagalamaga&fields=raid_rankings,raid_progression&access_key=RIOLbg1VCrXWMeEb5kx8Qg7dE",
+  "response_status": 200,
+  "response_data": {
+    "displayName": null,
+    "faction": "alliance",
+    "last_crawled_at": "2025-08-07T17:36:30.000Z",
+    "name": "Ababagalamaga",
+    "profile_url": "https://raider.io/guilds/eu/ravencrest/Ababagalamaga",
+    "raid_progression": {
+      "blackrock-depths": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 2,
+        "summary": "8/8 H",
+        "total_bosses": 8
+      },
+      "liberation-of-undermine": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 8,
+        "summary": "8/8 H",
+        "total_bosses": 8
+      },
+      "manaforge-omega": {
+        "heroic_bosses_killed": 0,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "0/8 N",
+        "total_bosses": 8
+      },
+      "nerubar-palace": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 8,
+        "summary": "8/8 H",
+        "total_bosses": 8
+      }
+    },
+    "raid_rankings": {
+      "blackrock-depths": {
+        "heroic": {
+          "realm": 24,
+          "region": 813,
+          "world": 1448
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 46,
+          "region": 1620,
+          "world": 3604
+        }
+      },
+      "liberation-of-undermine": {
+        "heroic": {
+          "realm": 114,
+          "region": 3748,
+          "world": 7796
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 88,
+          "region": 2835,
+          "world": 6218
+        }
+      },
+      "manaforge-omega": {
+        "heroic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "nerubar-palace": {
+        "heroic": {
+          "realm": 151,
+          "region": 5361,
+          "world": 10507
+        },
+        "mythic": {
+          "realm": 110,
+          "region": 4010,
+          "world": 8242
+        },
+        "normal": {
+          "realm": 168,
+          "region": 6271,
+          "world": 12930
+        }
+      }
+    },
+    "realm": "Ravencrest",
+    "region": "eu"
+  },
+  "error": null
+}

@@ -1,0 +1,116 @@
+{
+  "timestamp": "2025-08-12T02:07:23.148215033Z",
+  "request_type": "guild_profile",
+  "url": "https://raider.io/api/v1/guilds/profile?region=eu&realm=terokkar&name=Komora&fields=raid_rankings,raid_progression&access_key=RIOLbg1VCrXWMeEb5kx8Qg7dE",
+  "response_status": 200,
+  "response_data": {
+    "displayName": null,
+    "faction": "alliance",
+    "last_crawled_at": "2025-08-09T10:22:35.000Z",
+    "name": "Komora",
+    "profile_url": "https://raider.io/guilds/eu/terokkar/Komora",
+    "raid_progression": {
+      "blackrock-depths": {
+        "heroic_bosses_killed": 0,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "0/8 N",
+        "total_bosses": 8
+      },
+      "liberation-of-undermine": {
+        "heroic_bosses_killed": 0,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "0/8 N",
+        "total_bosses": 8
+      },
+      "manaforge-omega": {
+        "heroic_bosses_killed": 0,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "0/8 N",
+        "total_bosses": 8
+      },
+      "nerubar-palace": {
+        "heroic_bosses_killed": 0,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "0/8 N",
+        "total_bosses": 8
+      }
+    },
+    "raid_rankings": {
+      "blackrock-depths": {
+        "heroic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "liberation-of-undermine": {
+        "heroic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "manaforge-omega": {
+        "heroic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "nerubar-palace": {
+        "heroic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      }
+    },
+    "realm": "Terokkar",
+    "region": "eu"
+  },
+  "error": null
+}

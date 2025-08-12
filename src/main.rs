@@ -8,6 +8,7 @@ use std::env;
 use tracing::{error, info, warn};
 
 // Module declarations
+mod api_logger;
 mod commands;
 mod config;
 mod error;
@@ -98,7 +99,18 @@ impl EventHandler for Handler {
                 "rules" => commands::handle_rules_command().await,
                 "help" => commands::handle_help_command().await,
                 _ => {
-                    // Execute the command first
+                    // For complex commands that might take time, defer the response
+                    if let Err(why) = command
+                        .create_interaction_response(&ctx.http, |response| {
+                            response
+                                .kind(InteractionResponseType::DeferredChannelMessageWithSource)
+                        })
+                        .await
+                    {
+                        error!(command = %command_name, error = %why, "Failed to defer response");
+                        return;
+                    }
+
                     info!("Executing command: {}", command_name);
 
                     let content = match command_name.as_str() {
@@ -114,16 +126,14 @@ impl EventHandler for Handler {
                         }
                     };
 
-                    // Respond immediately with the result
+                    // Send follow-up response
                     if let Err(why) = command
-                        .create_interaction_response(&ctx.http, |response| {
-                            response
-                                .kind(InteractionResponseType::ChannelMessageWithSource)
-                                .interaction_response_data(|message| message.content(&content))
+                        .create_followup_message(&ctx.http, |response| {
+                            response.content(&content)
                         })
                         .await
                     {
-                        error!(command = %command_name, error = %why, "Failed to respond to command");
+                        error!(command = %command_name, error = %why, "Failed to send follow-up");
                     } else {
                         info!(command = %command_name, user = user_id.0, response_length = content.len(), "Command completed successfully");
                     }
@@ -157,6 +167,10 @@ async fn main() -> Result<()> {
     // Initialize logging
     logging::init_logging(&config.logging)?;
     info!("WoW Guild Bot starting up...");
+
+    // Initialize API request logging
+    api_logger::init_api_logger("logs");
+    info!("API request logging initialized");
 
     let args: Vec<String> = env::args().collect();
     

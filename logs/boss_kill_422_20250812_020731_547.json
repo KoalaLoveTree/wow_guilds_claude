@@ -1,0 +1,8 @@
+{
+  "timestamp": "2025-08-12T02:07:31.547464498Z",
+  "request_type": "boss_kill_422",
+  "url": "https://raider.io/api/guilds/boss-kills?raid=liberation-of-undermine&difficulty=mythic&region=eu&realm=silvermoon&guild=Dark%20Green&boss=sprocketmonger-lockenstock",
+  "response_status": 422,
+  "response_data": null,
+  "error": "Boss kill data not available (422)"
+}

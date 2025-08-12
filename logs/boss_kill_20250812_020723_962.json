@@ -1,0 +1,84 @@
+{
+  "timestamp": "2025-08-12T02:07:23.962688727Z",
+  "request_type": "boss_kill",
+  "url": "https://raider.io/api/guilds/boss-kills?raid=liberation-of-undermine&difficulty=mythic&region=eu&realm=terokkar&guild=Knaipa%20Variativ&boss=onearmed-bandit",
+  "response_status": 200,
+  "response_data": {
+    "killDetails": {
+      "attempt": {
+        "bestPercent": 88.02,
+        "lastPullAt": "2025-06-29T20:04:00.499Z",
+        "pullCount": 2,
+        "pullStartedAt": "2025-06-29T19:59:28.989Z"
+      },
+      "boss": {
+        "encounterId": 197114,
+        "iconUrl": "/images/wow/icons/large/inv_111_raid_achievement_onearmedbandit.jpg",
+        "name": "One-Armed Bandit",
+        "ordinal": 5,
+        "slug": "onearmed-bandit",
+        "wingId": 0
+      },
+      "canManageOthersVideos": false,
+      "canManageOwnVideos": false,
+      "guild": {
+        "displayName": "Knaipa Variativ",
+        "faction": "alliance",
+        "id": 1599951,
+        "isDefaultLogo": true,
+        "logo": "https://cdn.raiderio.net/images/site/alliance_icon4.png",
+        "name": "Knaipa Variativ",
+        "path": "/guilds/eu/terokkar/Knaipa%20Variativ",
+        "realm": {
+          "altName": null,
+          "altSlug": "terokkar",
+          "connectedRealmId": 277,
+          "id": 723,
+          "isConnected": true,
+          "locale": "en_GB",
+          "name": "Terokkar",
+          "realmType": "live",
+          "slug": "terokkar",
+          "wowConnectedRealmId": 633,
+          "wowRealmId": 1415
+        },
+        "region": {
+          "name": "Europe",
+          "short_name": "EU",
+          "slug": "eu"
+        }
+      },
+      "guildPrivacy": {
+        "raidComps": true,
+        "raidPercents": true,
+        "raidPulls": true,
+        "shareRaidUntil": null,
+        "wereRaidCompsRestricted": false,
+        "wereRaidPercentsRestricted": false,
+        "wereRaidPullsRestricted": false
+      },
+      "isAttempt": true,
+      "raid": {
+        "difficulty": "mythic",
+        "expansion_id": 10,
+        "icon_url": "/images/wow/icons/large/inv_achievement_zone_undermine.jpg",
+        "id": 15522,
+        "name": "Liberation of Undermine",
+        "short_name": "LOU",
+        "slug": "liberation-of-undermine",
+        "type": "raid",
+        "wowInstanceId": 2769
+      },
+      "ui": {
+        "boss": "onearmed-bandit",
+        "difficulty": "mythic",
+        "guild": "Knaipa Variativ",
+        "raid": "liberation-of-undermine",
+        "realm": "terokkar",
+        "region": "eu"
+      },
+      "videos": []
+    }
+  },
+  "error": null
+}

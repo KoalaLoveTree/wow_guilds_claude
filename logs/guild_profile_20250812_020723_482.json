@@ -1,0 +1,116 @@
+{
+  "timestamp": "2025-08-12T02:07:23.482107569Z",
+  "request_type": "guild_profile",
+  "url": "https://raider.io/api/v1/guilds/profile?region=eu&realm=terokkar&name=Knaipa%20Variativ&fields=raid_rankings,raid_progression&access_key=RIOLbg1VCrXWMeEb5kx8Qg7dE",
+  "response_status": 200,
+  "response_data": {
+    "displayName": null,
+    "faction": "alliance",
+    "last_crawled_at": "2025-08-06T02:32:37.000Z",
+    "name": "Knaipa Variativ",
+    "profile_url": "https://raider.io/guilds/eu/terokkar/Knaipa%20Variativ",
+    "raid_progression": {
+      "blackrock-depths": {
+        "heroic_bosses_killed": 6,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 8,
+        "summary": "6/8 H",
+        "total_bosses": 8
+      },
+      "liberation-of-undermine": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 5,
+        "normal_bosses_killed": 8,
+        "summary": "5/8 M",
+        "total_bosses": 8
+      },
+      "manaforge-omega": {
+        "heroic_bosses_killed": 0,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "0/8 N",
+        "total_bosses": 8
+      },
+      "nerubar-palace": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 4,
+        "normal_bosses_killed": 8,
+        "summary": "4/8 M",
+        "total_bosses": 8
+      }
+    },
+    "raid_rankings": {
+      "blackrock-depths": {
+        "heroic": {
+          "realm": 8,
+          "region": 1060,
+          "world": 1878
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 2,
+          "region": 141,
+          "world": 350
+        }
+      },
+      "liberation-of-undermine": {
+        "heroic": {
+          "realm": 13,
+          "region": 2023,
+          "world": 3617
+        },
+        "mythic": {
+          "realm": 10,
+          "region": 1536,
+          "world": 3143
+        },
+        "normal": {
+          "realm": 14,
+          "region": 1897,
+          "world": 3682
+        }
+      },
+      "manaforge-omega": {
+        "heroic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "nerubar-palace": {
+        "heroic": {
+          "realm": 21,
+          "region": 3130,
+          "world": 5802
+        },
+        "mythic": {
+          "realm": 10,
+          "region": 1907,
+          "world": 3665
+        },
+        "normal": {
+          "realm": 16,
+          "region": 2199,
+          "world": 4744
+        }
+      }
+    },
+    "realm": "Terokkar",
+    "region": "eu"
+  },
+  "error": null
+}

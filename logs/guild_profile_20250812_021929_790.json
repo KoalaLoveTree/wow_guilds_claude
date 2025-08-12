@@ -1,0 +1,116 @@
+{
+  "timestamp": "2025-08-12T02:19:29.790608894Z",
+  "request_type": "guild_profile",
+  "url": "https://raider.io/api/v1/guilds/profile?region=eu&realm=tarren-mill&name=Millennial%20Union&fields=raid_rankings,raid_progression&access_key=RIOLbg1VCrXWMeEb5kx8Qg7dE",
+  "response_status": 200,
+  "response_data": {
+    "displayName": null,
+    "faction": "horde",
+    "last_crawled_at": "2025-08-04T04:04:26.000Z",
+    "name": "Millennial Union",
+    "profile_url": "https://raider.io/guilds/eu/tarren-mill/Millennial%20Union",
+    "raid_progression": {
+      "blackrock-depths": {
+        "heroic_bosses_killed": 1,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "1/8 H",
+        "total_bosses": 8
+      },
+      "liberation-of-undermine": {
+        "heroic_bosses_killed": 7,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 8,
+        "summary": "7/8 H",
+        "total_bosses": 8
+      },
+      "manaforge-omega": {
+        "heroic_bosses_killed": 0,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 0,
+        "summary": "0/8 N",
+        "total_bosses": 8
+      },
+      "nerubar-palace": {
+        "heroic_bosses_killed": 8,
+        "mythic_bosses_killed": 0,
+        "normal_bosses_killed": 6,
+        "summary": "8/8 H",
+        "total_bosses": 8
+      }
+    },
+    "raid_rankings": {
+      "blackrock-depths": {
+        "heroic": {
+          "realm": 174,
+          "region": 2544,
+          "world": 4643
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "liberation-of-undermine": {
+        "heroic": {
+          "realm": 327,
+          "region": 6159,
+          "world": 14457
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 132,
+          "region": 1493,
+          "world": 3275
+        }
+      },
+      "manaforge-omega": {
+        "heroic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "mythic": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        },
+        "normal": {
+          "realm": 0,
+          "region": 0,
+          "world": 0
+        }
+      },
+      "nerubar-palace": {
+        "heroic": {
+          "realm": 352,
+          "region": 4692,
+          "world": 9084
+        },
+        "mythic": {
+          "realm": 287,
+          "region": 3820,
+          "world": 7860
+        },
+        "normal": {
+          "realm": 512,
+          "region": 9501,
+          "world": 21448
+        }
+      }
+    },
+    "realm": "Tarren Mill",
+    "region": "eu"
+  },
+  "error": null
+}

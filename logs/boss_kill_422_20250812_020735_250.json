@@ -1,0 +1,8 @@
+{
+  "timestamp": "2025-08-12T02:07:35.250969938Z",
+  "request_type": "boss_kill_422",
+  "url": "https://raider.io/api/guilds/boss-kills?raid=liberation-of-undermine&difficulty=heroic&region=eu&realm=eversong&guild=%D0%A5%D0%B0%D1%80%D1%86%D0%B8%D0%B7%D0%B8&boss=chrome-king-gallywix",
+  "response_status": 422,
+  "response_data": null,
+  "error": "Boss kill data not available (422)"
+}

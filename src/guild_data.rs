@@ -137,11 +137,14 @@ pub async fn fetch_all_guild_data(tier: RaidTier, config: &AppConfig) -> Result<
 /// Sort guilds by progression and rank
 pub fn sort_guilds(mut guilds: Vec<GuildData>) -> Vec<GuildData> {
     guilds.sort_by(|a, b| {
-        // First sort by world rank (if available)
-        match (a.rank.as_ref(), b.rank.as_ref()) {
+        // First sort by world rank (if available and > 0)
+        let rank_a = a.rank.as_ref().filter(|r| r.value() > 0);
+        let rank_b = b.rank.as_ref().filter(|r| r.value() > 0);
+        
+        match (rank_a, rank_b) {
             (Some(rank_a), Some(rank_b)) => rank_a.value().cmp(&rank_b.value()),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (Some(_), None) => std::cmp::Ordering::Less,  // Ranked guilds come first
+            (None, Some(_)) => std::cmp::Ordering::Greater, // Unranked guilds come last
             (None, None) => {
                 // If no ranks, sort by best percent descending
                 b.best_percent.partial_cmp(&a.best_percent).unwrap_or(std::cmp::Ordering::Equal)
@@ -174,19 +177,48 @@ pub fn format_guild_list(guilds: &[GuildData], limit: Option<usize>, show_all: b
             None => "Unranked".to_string(),
         };
         
-        result.push_str(&format!(
-            "{}. **{}** - *{}*\n   Progress: {} | Rank: {} | Best: {:.1}% ({} pulls)\n",
-            i + 1,
-            guild.name,
-            guild.realm,
-            guild.progress,
-            rank_str,
-            guild.best_percent,
-            guild.pull_count
-        ));
+        // Check if progress shows completion (e.g., "8/8 M") or no progress data (100.0% with no pulls)
+        let is_completed = guild.progress.contains("/8 M") && guild.progress.starts_with("8/");
+        let has_no_progress = guild.best_percent == 100.0 && guild.pull_count.is_none();
         
-        if i < display_count - 1 {
-            result.push('\n');
+        if is_completed || has_no_progress {
+            // Single line format without best details for completed guilds or guilds without progress
+            result.push_str(&format!(
+                "{}. **{}** - *{}* - Progress: {} | Rank: {}\n",
+                i + 1,
+                guild.name,
+                guild.realm.display_name(),
+                guild.progress,
+                rank_str
+            ));
+        } else {
+            // Single line format with best details for in-progress guilds
+            match guild.pull_count {
+                Some(pulls) => {
+                    result.push_str(&format!(
+                        "{}. **{}** - *{}* - Progress: {} | Rank: {} | Best: {:.1}% ({} pulls)\n",
+                        i + 1,
+                        guild.name,
+                        guild.realm.display_name(),
+                        guild.progress,
+                        rank_str,
+                        guild.best_percent,
+                        pulls
+                    ));
+                }
+                None => {
+                    // Show best percent without pull count when pullCount is null
+                    result.push_str(&format!(
+                        "{}. **{}** - *{}* - Progress: {} | Rank: {} | Best: {:.1}%\n",
+                        i + 1,
+                        guild.name,
+                        guild.realm.display_name(),
+                        guild.progress,
+                        rank_str,
+                        guild.best_percent
+                    ));
+                }
+            }
         }
     }
     
@@ -224,7 +256,7 @@ mod tests {
                 progress: "5/8 M".to_string(),
                 rank: Some(crate::types::WorldRank::from(100)),
                 best_percent: 85.0,
-                pull_count: 50,
+                pull_count: Some(50),
             },
             GuildData {
                 name: GuildName::from("Guild A"),
@@ -232,7 +264,7 @@ mod tests {
                 progress: "8/8 M".to_string(),
                 rank: Some(crate::types::WorldRank::from(50)),
                 best_percent: 100.0,
-                pull_count: 120,
+                pull_count: Some(120),
             },
         ];
 

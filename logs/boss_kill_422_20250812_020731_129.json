@@ -1,0 +1,8 @@
+{
+  "timestamp": "2025-08-12T02:07:31.129954513Z",
+  "request_type": "boss_kill_422",
+  "url": "https://raider.io/api/guilds/boss-kills?raid=liberation-of-undermine&difficulty=normal&region=eu&realm=kazzak&guild=UKRAINIAN%20GUILD&boss=vexie-and-the-geargrinders",
+  "response_status": 422,
+  "response_data": null,
+  "error": "Boss kill data not available (422)"
+}
