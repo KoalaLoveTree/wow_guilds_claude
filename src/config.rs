@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub raider_io: RaiderIoConfig,
     pub rate_limiting: RateLimitConfig,
     pub data: DataConfig,
+    pub database: DatabaseConfig,
     pub logging: LoggingConfig,
 }
 
@@ -43,11 +44,15 @@ pub struct RateLimitConfig {
 /// Data handling configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DataConfig {
-    pub guild_list_file: String,
-    pub additional_characters_file: String,
-    pub output_file: String,
     pub backup_enabled: bool,
     pub batch_size: usize,
+}
+
+/// Database configuration
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DatabaseConfig {
+    pub url: String,
+    pub auto_migrate: bool,
 }
 
 /// Logging configuration
@@ -98,6 +103,7 @@ impl Default for AppConfig {
             raider_io: RaiderIoConfig::default(),
             rate_limiting: RateLimitConfig::default(),
             data: DataConfig::default(),
+            database: DatabaseConfig::default(),
             logging: LoggingConfig::default(),
         }
     }
@@ -138,11 +144,17 @@ impl Default for RateLimitConfig {
 impl Default for DataConfig {
     fn default() -> Self {
         Self {
-            guild_list_file: "uaguildlist.txt".to_string(),
-            additional_characters_file: "addCharacters.txt".to_string(),
-            output_file: "members.json".to_string(),
             backup_enabled: true,
             batch_size: 100,
+        }
+    }
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            url: "sqlite://wow_guild_bot.db".to_string(),
+            auto_migrate: true,
         }
     }
 }

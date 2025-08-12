@@ -28,6 +28,10 @@ pub enum BotError {
     #[error("Configuration error: {0}")]
     Config(#[from] config::ConfigError),
 
+    /// Database errors
+    #[error("Database error: {0}")]
+    Database(String),
+
     /// Rate limiting errors
     #[error("Rate limit exceeded: {message}")]
     RateLimit { message: String },

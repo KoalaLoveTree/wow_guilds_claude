@@ -1,23 +1,31 @@
 use std::collections::HashMap;
 use std::fs;
 use crate::config::AppConfig;
+use crate::database::{Database, DbMember};
 use crate::error::Result;
 use serde_json;
 use crate::raider_io::{RaiderIOClient, PlayerData};
-use crate::guild_data::{read_guild_data, read_additional_characters};
 use crate::types::{PlayerName, RealmName, GuildName, MythicPlusScore};
 use futures::stream::{self, StreamExt};
+use tracing::{info, error, warn};
 
 pub async fn generate_members_data() -> Result<()> {
     let config = AppConfig::load()?;
-    println!("Starting member data generation...");
+    info!("Starting member data generation with database workflow...");
     
     let client = RaiderIOClient::from_config(&config)?;
     let mut data_dict: HashMap<(String, String), PlayerData> = HashMap::new();
     
-    // Read guild URLs
-    let guild_urls = read_guild_data(&config.data.guild_list_file)?.into_iter().map(|url| url.to_query_string()).collect::<Vec<_>>();
-    println!("Processing {} guilds...", guild_urls.len());
+    // Initialize database
+    let database = Database::new(&config.database.url).await?;
+    
+    // Clear temporary table for fresh start
+    database.clear_temp_members().await?;
+    info!("Cleared temporary members table");
+    
+    // Get guild URLs from database instead of file
+    let guild_urls = database.get_all_guilds().await?.into_iter().map(|url| url.to_query_string()).collect::<Vec<_>>();
+    info!("Processing {} guilds from database...", guild_urls.len());
     
     // Process guilds to get member lists
     for (i, url) in guild_urls.iter().enumerate() {
@@ -62,36 +70,12 @@ pub async fn generate_members_data() -> Result<()> {
         }
     }
     
-    // Add additional characters from file
-    if let Ok(additional_chars) = read_additional_characters(&config.data.additional_characters_file) {
-        let count = additional_chars.len();
-        for (name, realm) in &additional_chars {
-            let player_key = (realm.to_string(), name.to_string());
-            if !data_dict.contains_key(&player_key) {
-                data_dict.insert(player_key, PlayerData {
-                    name: name.clone(),
-                    realm: realm.clone(),
-                    guild: None,
-                    class: None,
-                    active_spec_name: None,
-                    rio_all: MythicPlusScore::zero(),
-                    rio_dps: MythicPlusScore::zero(),
-                    rio_healer: MythicPlusScore::zero(),
-                    rio_tank: MythicPlusScore::zero(),
-                    spec_0: MythicPlusScore::zero(),
-                    spec_1: MythicPlusScore::zero(),
-                    spec_2: MythicPlusScore::zero(),
-                    spec_3: MythicPlusScore::zero(),
-                });
-            }
-        }
-        println!("Added {} additional characters", count);
-    }
+    // Additional characters functionality removed - all member data now comes from guild rosters
     
     println!("Fetching RIO data for {} players...", data_dict.len());
     
-    // Initialize JSON file with opening bracket
-    fs::write("members.json", "[\n")?;
+    // Database will be used instead of JSON file
+    info!("Storing member data in temporary database table...");
     
     // Fetch RIO data for all players with proper rate limiting and incremental writing
     let players: Vec<_> = data_dict.keys().cloned().collect();
@@ -195,7 +179,7 @@ pub async fn generate_members_data() -> Result<()> {
     }))
     .buffer_unordered(5); // 5 concurrent requests at 100ms intervals for 10 req/sec
     
-    // Process results incrementally and write every 100 players
+    // Process results incrementally and store in database every 100 players
     while let Some(result) = results.next().await {
         if let Some((player, success, _index)) = result {
             final_players.push(player);
@@ -205,52 +189,70 @@ pub async fn generate_members_data() -> Result<()> {
                 failed_fetches += 1;
             }
             
-            // Write to file every 100 players or on the last player
+            // Store in database every 100 players or on the last player
             if final_players.len() % 100 == 0 || final_players.len() == total_players {
-                // Append the current batch to the file
-                let mut file_content = std::fs::OpenOptions::new()
-                    .append(true)
-                    .open("members.json")?;
-                
-                use std::io::Write;
-                for (i, player) in final_players.iter().enumerate().skip(players_written) {
-                    let json_line = serde_json::to_string_pretty(player)?;
-                    if players_written > 0 || i > 0 {
-                        write!(file_content, ",\n")?;
+                // Convert and store batch in temporary table
+                for player in final_players.iter().skip(players_written) {
+                    let db_member = DbMember {
+                        id: 0, // Will be auto-generated
+                        name: player.name.to_string(),
+                        realm: player.realm.to_string(),
+                        guild_name: player.guild.as_ref().map(|g| g.to_string()),
+                        guild_realm: Some(player.realm.to_string()), // Use player's realm as guild realm
+                        class: player.class.clone(),
+                        spec: player.active_spec_name.clone(),
+                        rio_score: Some(player.rio_all.value() as f64), // Legacy field - kept for compatibility
+                        ilvl: None, // Could be added later from character data
+                        // Complete RIO data matching PlayerData structure
+                        rio_all: player.rio_all.value() as f64,
+                        rio_dps: player.rio_dps.value() as f64,
+                        rio_healer: player.rio_healer.value() as f64,
+                        rio_tank: player.rio_tank.value() as f64,
+                        spec_0: player.spec_0.value() as f64,
+                        spec_1: player.spec_1.value() as f64,
+                        spec_2: player.spec_2.value() as f64,
+                        spec_3: player.spec_3.value() as f64,
+                        updated_at: chrono::Utc::now(),
+                    };
+                    
+                    if let Err(e) = database.insert_temp_member(&db_member).await {
+                        error!("Failed to insert member {}-{}: {}", player.name, player.realm, e);
                     }
-                    write!(file_content, "{}", json_line)?;
                 }
-                file_content.flush()?;
                 
                 players_written = final_players.len();
-                println!("Written {} players to members.json", players_written);
+                info!("Stored {} players in database", players_written);
             }
         }
     }
     
-    // Close the JSON array
-    let mut file_content = std::fs::OpenOptions::new()
-        .append(true)
-        .open("members.json")?;
-    use std::io::Write;
-    write!(file_content, "\n]")?;
-    file_content.flush()?;
+    // Swap temporary table with active members table
+    info!("Swapping temporary table with active members table...");
+    database.swap_members_tables().await?;
     
-    println!("Completed data fetching:");
-    println!("  - Successfully fetched: {} players", successful_fetches);
-    println!("  - Failed/No data: {} players", failed_fetches);
-    println!("  - Total processed: {} players", final_players.len());
+    // Get final statistics
+    let (guild_count, member_count) = database.get_stats().await?;
     
-    // Create a timestamped backup
-    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-    let timestamped_filename = format!("members_{}.json", timestamp);
-    if let Err(e) = fs::copy("members.json", &timestamped_filename) {
-        eprintln!("Warning: Could not save timestamped backup {}: {}", timestamped_filename, e);
-    } else {
-        println!("Also saved backup as: {}", timestamped_filename);
+    info!("Completed data fetching:");
+    info!("  - Successfully fetched: {} players", successful_fetches);
+    info!("  - Failed/No data: {} players", failed_fetches);
+    info!("  - Total processed: {} players", final_players.len());
+    info!("  - Guilds in database: {}", guild_count);
+    info!("  - Members in database: {}", member_count);
+    
+    // Optional: Export JSON backup for compatibility with existing tools
+    if config.data.backup_enabled {
+        info!("Creating JSON backup for compatibility...");
+        let members = database.get_members_for_ranking(None).await?;
+        let json_data = serde_json::to_string_pretty(&members)?;
+        
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+        let backup_filename = format!("members_backup_{}.json", timestamp);
+        fs::write(&backup_filename, json_data)?;
+        info!("Created JSON backup: {}", backup_filename);
     }
     
-    println!("Successfully generated members.json with {} players!", final_players.len());
+    info!("Member data generation complete! Data stored in database with table swap workflow.");
     Ok(())
 }
 

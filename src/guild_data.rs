@@ -2,6 +2,7 @@
 use std::fs;
 use std::path::Path;
 use crate::config::AppConfig;
+use crate::database::Database;
 use crate::error::Result;
 use crate::raider_io::{RaiderIOClient, GuildData};
 use crate::types::{GuildUrl, GuildName, PlayerName, RaidTier, RealmName};
@@ -84,10 +85,13 @@ pub fn read_additional_characters(file_path: &str) -> Result<Vec<(PlayerName, Re
     Ok(characters)
 }
 
-/// Fetch all guild data for a given raid tier
+/// Fetch all guild data for a given raid tier (using database)
 pub async fn fetch_all_guild_data(tier: RaidTier, config: &AppConfig) -> Result<Vec<GuildData>> {
     let client = RaiderIOClient::from_config(config)?;
-    let guild_urls = read_guild_data(&config.data.guild_list_file)?;
+    
+    // Initialize database and get guild URLs from it
+    let database = Database::new(&config.database.url).await?;
+    let guild_urls = database.get_all_guilds().await?;
     
     if guild_urls.is_empty() {
         warn!("No guild URLs found");
@@ -163,65 +167,111 @@ pub fn format_guild_list(guilds: &[GuildData], limit: Option<usize>, show_all: b
     };
     
     let mut result = String::new();
-    result.push_str(&format!("**Guild Rankings (Showing {} of {}):**\n\n", display_count, guilds.len()));
+    result.push_str(&format!("**Guild Rankings (Showing {} of {}):**\n", display_count, guilds.len()));
+    
+    // Use code block for monospace alignment
+    result.push_str("```");
+    result.push_str("Rank Guild Name                    Server        Progress  World Rank  Best\n");
+    result.push_str("──── ──────────────────────────── ───────────── ───────── ─────────── ────────────\n");
     
     for (i, guild) in guilds.iter().take(display_count).enumerate() {
-        let rank_str = match &guild.rank {
+        let rank_num = format!("#{}", i + 1);
+        let guild_name = truncate_and_pad(&guild.name, 28);
+        let server = truncate_and_pad(&guild.realm.display_name(), 13);
+        let progress = truncate_and_pad(&guild.progress, 9);
+        
+        let world_rank = match &guild.rank {
             Some(rank) => format!("#{}", rank.value()),
             None => "Unranked".to_string(),
         };
+        let world_rank_str = truncate_and_pad(&world_rank, 11);
         
-        // Check if progress shows completion (e.g., "8/8 M") or no progress data (100.0% with no pulls)
+        // Check if progress shows completion or no progress data
         let is_completed = guild.progress.contains("/8 M") && guild.progress.starts_with("8/");
         let has_no_progress = guild.best_percent == 100.0 && guild.pull_count.is_none();
         
-        if is_completed || has_no_progress {
-            // Single line format without best details for completed guilds or guilds without progress
-            result.push_str(&format!(
-                "{}. **{}** - *{}* - Progress: {} | Rank: {}\n",
-                i + 1,
-                guild.name,
-                guild.realm.display_name(),
-                guild.progress,
-                rank_str
-            ));
+        let best_progress = if is_completed || has_no_progress {
+            "Complete".to_string()
         } else {
-            // Single line format with best details for in-progress guilds
             match guild.pull_count {
-                Some(pulls) => {
-                    result.push_str(&format!(
-                        "{}. **{}** - *{}* - Progress: {} | Rank: {} | Best: {:.1}% ({} pulls)\n",
-                        i + 1,
-                        guild.name,
-                        guild.realm.display_name(),
-                        guild.progress,
-                        rank_str,
-                        guild.best_percent,
-                        pulls
-                    ));
-                }
-                None => {
-                    // Show best percent without pull count when pullCount is null
-                    result.push_str(&format!(
-                        "{}. **{}** - *{}* - Progress: {} | Rank: {} | Best: {:.1}%\n",
-                        i + 1,
-                        guild.name,
-                        guild.realm.display_name(),
-                        guild.progress,
-                        rank_str,
-                        guild.best_percent
-                    ));
-                }
+                Some(pulls) => format!("{:.1}%({} pulls)", guild.best_percent, pulls),
+                None => format!("{:.1}%", guild.best_percent),
             }
-        }
+        };
+        
+        result.push_str(&format!(
+            "{:<4} {:<28} {:<13} {:<9} {:<11} {}\n",
+            rank_num,
+            guild_name,
+            server,
+            progress,
+            world_rank_str,
+            best_progress
+        ));
     }
     
+    result.push_str("```");
     result
+}
+
+/// Helper function to truncate and pad strings to consistent length for monospace alignment
+fn truncate_and_pad(s: &str, target_len: usize) -> String {
+    if s.len() >= target_len {
+        format!("{}...", &s[..target_len.saturating_sub(3)])
+    } else {
+        format!("{}{}", s, " ".repeat(target_len - s.len()))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::{GuildName, RealmName, WorldRank};
+
+    #[test]
+    fn test_table_formatting() {
+        let test_guilds = vec![
+            GuildData {
+                name: GuildName::from("Нехай Щастить"),
+                realm: RealmName::from("Tarren Mill"),
+                progress: "8/8 M".to_string(),
+                rank: Some(WorldRank::new(50)),
+                best_percent: 100.0,
+                pull_count: None,
+            },
+            GuildData {
+                name: GuildName::from("Very Long Guild Name That Should Be Truncated"),
+                realm: RealmName::from("Howling Fjord"),
+                progress: "7/8 M".to_string(),
+                rank: Some(WorldRank::new(1250)),
+                best_percent: 85.5,
+                pull_count: Some(120),
+            },
+            GuildData {
+                name: GuildName::from("Short"),
+                realm: RealmName::from("Kazzak"),
+                progress: "6/8 M".to_string(),
+                rank: None,
+                best_percent: 75.0,
+                pull_count: None,
+            },
+        ];
+
+        let output = format_guild_list(&test_guilds, Some(10), false);
+        println!("Dynamic padding output:\n{}", output);
+        
+        // Should start with guild rankings header
+        assert!(output.starts_with("**Guild Rankings"));
+        // Should contain guild names and ranks
+        assert!(output.contains("Нехай Щастить"));
+        assert!(output.contains("Very Long Guild Name"));
+        assert!(output.contains("Short"));
+        // Should contain progress and rank info
+        assert!(output.contains("8/8 M"));
+        assert!(output.contains("7/8 M"));
+        assert!(output.contains("#50"));
+        assert!(output.contains("#1250"));
+    }
 
     #[test]
     fn test_parse_guild_url() {

@@ -10,6 +10,7 @@ use tracing::{error, info, warn};
 // Module declarations
 mod commands;
 mod config;
+mod database;
 mod error;
 mod guild_data;
 mod logging;
@@ -20,6 +21,7 @@ mod types;
 
 // Re-exports for convenience
 use crate::config::AppConfig;
+use crate::database::Database;
 use crate::error::{BotError, Result};
 
 // Logging macros
@@ -167,6 +169,8 @@ async fn main() -> Result<()> {
     logging::init_logging(&config.logging)?;
     info!("WoW Guild Bot starting up...");
 
+    // Initialize database (migrations will populate guild data automatically)
+    let database = Database::new(&config.database.url).await?;
 
     let args: Vec<String> = env::args().collect();
     
@@ -183,10 +187,44 @@ async fn main() -> Result<()> {
                 Err(BotError::from(e))
             }
         }
+    } else if args.len() > 1 && args[1] == "db-status" {
+        // Show database status and migrations
+        show_database_status(&database).await?;
+        Ok(())
     } else {
         // Run Discord bot
         run_discord_bot(config).await
     }
+}
+
+/// Show database status and migrations
+async fn show_database_status(database: &Database) -> Result<()> {
+    info!("=== Database Status ===");
+    
+    // Get stats
+    let (guild_count, member_count) = database.get_stats().await?;
+    info!("📊 Guilds: {}", guild_count);
+    info!("👥 Members: {}", member_count);
+    
+    info!("\n=== Executed Migrations ===");
+    match database.get_migrations().await {
+        Ok(migrations) => {
+            for (name, executed_at) in migrations {
+                info!("✅ {} (executed: {})", name, executed_at.format("%Y-%m-%d %H:%M:%S UTC"));
+            }
+        },
+        Err(e) => {
+            warn!("Could not fetch migrations: {}", e);
+        }
+    }
+    
+    info!("\n=== Database Tables ===");
+    info!("📋 _migrations - Migration tracking");
+    info!("🏰 guilds - Guild data (62 guilds from migration)");
+    info!("👤 members - Active member data with complete RIO stats (rio_all, rio_dps, rio_healer, rio_tank, spec_0-3)");
+    info!("🔄 members_tmp - Temporary member data for parsing workflow with same complete structure");
+    
+    Ok(())
 }
 
 /// Run the Discord bot with the given configuration
