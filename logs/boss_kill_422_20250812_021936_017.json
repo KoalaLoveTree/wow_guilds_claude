@@ -1,8 +1,0 @@
-{
-  "timestamp": "2025-08-12T02:19:36.017963059Z",
-  "request_type": "boss_kill_422",
-  "url": "https://raider.io/api/guilds/boss-kills?raid=liberation-of-undermine&difficulty=normal&region=eu&realm=silvermoon&guild=BBC%20team&boss=vexie-and-the-geargrinders",
-  "response_status": 422,
-  "response_data": null,
-  "error": "Boss kill data not available (422)"
-}

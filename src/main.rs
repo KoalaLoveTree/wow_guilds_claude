@@ -8,7 +8,6 @@ use std::env;
 use tracing::{error, info, warn};
 
 // Module declarations
-mod api_logger;
 mod commands;
 mod config;
 mod error;
@@ -168,9 +167,6 @@ async fn main() -> Result<()> {
     logging::init_logging(&config.logging)?;
     info!("WoW Guild Bot starting up...");
 
-    // Initialize API request logging
-    api_logger::init_api_logger("logs");
-    info!("API request logging initialized");
 
     let args: Vec<String> = env::args().collect();
     

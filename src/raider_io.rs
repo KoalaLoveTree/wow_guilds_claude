@@ -1,5 +1,4 @@
 /// Raider.io API client with proper error handling and type safety
-use crate::api_logger;
 use crate::config::AppConfig;
 use crate::error::{BotError, Result};
 use crate::types::{GuildName, GuildUrl, MythicPlusScore, PlayerName, RaidTier, RealmName, Season, WorldRank};
@@ -234,15 +233,7 @@ impl RaiderIOClient {
         if !response.status().is_success() {
             if status == StatusCode::NOT_FOUND {
                 warn!("Guild not found: {}/{}", guild_url.realm, guild_url.name);
-                // Log the error response
-                if let Some(logger) = api_logger::get_api_logger() {
-                    logger.log_error("guild_profile", &url, status.as_u16(), "Guild not found").await;
-                }
                 return Ok(None);
-            }
-            // Log other errors
-            if let Some(logger) = api_logger::get_api_logger() {
-                logger.log_error("guild_profile", &url, status.as_u16(), &format!("HTTP error: {}", status)).await;
             }
             return Err(BotError::from(status));
         }
@@ -253,12 +244,6 @@ impl RaiderIOClient {
         let guild_data: RaiderIOGuildResponse = serde_json::from_str(&response_text)
             .map_err(|e| BotError::Application(format!("Failed to parse JSON: {}", e)))?;
         
-        // Log successful response
-        if let Some(logger) = api_logger::get_api_logger() {
-            if let Ok(response_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
-                logger.log_guild_profile(&url, status.as_u16(), response_json).await;
-            }
-        }
 
         debug!("Looking for raid_name: '{}' in raid_progression keys: {:?}", raid_name, guild_data.raid_progression.keys().collect::<Vec<_>>());
         debug!("Looking for raid_name: '{}' in raid_rankings keys: {:?}", raid_name, guild_data.raid_rankings.keys().collect::<Vec<_>>());
@@ -395,31 +380,17 @@ impl RaiderIOClient {
         
         if status == StatusCode::UNPROCESSABLE_ENTITY {
             debug!("Boss kill data not available (422 response)");
-            // Log 422 error
-            if let Some(logger) = api_logger::get_api_logger() {
-                logger.log_boss_kill_error(&url, status.as_u16(), "Boss kill data not available (422)").await;
-            }
             return Ok((100.0, None));
         }
 
         if !status.is_success() {
             warn!("Failed to fetch boss kill data: {}", status);
-            // Log other errors
-            if let Some(logger) = api_logger::get_api_logger() {
-                logger.log_boss_kill_error(&url, status.as_u16(), &format!("HTTP error: {}", status)).await;
-            }
             return Ok((0.0, None));
         }
 
         let response_text = response.text().await
             .map_err(|e| BotError::Application(format!("Failed to get response text: {}", e)))?;
         
-        // Log successful response
-        if let Some(logger) = api_logger::get_api_logger() {
-            if let Ok(response_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
-                logger.log_boss_kill(&url, status.as_u16(), response_json).await;
-            }
-        }
         
         // Handle empty JSON response ({})
         if response_text.trim() == "{}" {
@@ -502,22 +473,12 @@ impl RaiderIOClient {
         
         if !status.is_success() {
             debug!("Next boss kill data not available: {}", status);
-            // Log error
-            if let Some(logger) = api_logger::get_api_logger() {
-                logger.log_boss_kill_error(&url, status.as_u16(), &format!("Next boss kill data not available: {}", status)).await;
-            }
             return Ok((0.0, None));
         }
         
         let response_text = response.text().await
             .map_err(|e| BotError::Application(format!("Failed to get response text: {}", e)))?;
         
-        // Log successful response
-        if let Some(logger) = api_logger::get_api_logger() {
-            if let Ok(response_json) = serde_json::from_str::<serde_json::Value>(&response_text) {
-                logger.log_boss_kill(&url, status.as_u16(), response_json).await;
-            }
-        }
         
         // Handle empty JSON response for next boss too
         if response_text.trim() == "{}" {
