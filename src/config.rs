@@ -22,6 +22,8 @@ pub struct DiscordConfig {
     pub guild_id: Option<u64>,
     pub server_id: Option<String>,
     pub rules_channel_id: Option<String>,
+    pub auto_role_id: Option<String>,
+    pub auto_role_enabled: bool,
 }
 
 /// Raider.io API configuration
@@ -118,6 +120,8 @@ impl Default for DiscordConfig {
             guild_id: None,
             server_id: None,
             rules_channel_id: None,
+            auto_role_id: None,
+            auto_role_enabled: true,
         }
     }
 }
@@ -210,6 +214,12 @@ impl AppConfig {
         }
         if let Ok(channel_id) = std::env::var("DISCORD_RULES_CHANNEL_ID") {
             builder = builder.set_override("discord.rules_channel_id", channel_id).unwrap();
+        }
+        if let Ok(role_id) = std::env::var("DISCORD_AUTO_ROLE_ID") {
+            builder = builder.set_override("discord.auto_role_id", role_id).unwrap();
+        }
+        if let Ok(enabled) = std::env::var("DISCORD_AUTO_ROLE_ENABLED") {
+            builder = builder.set_override("discord.auto_role_enabled", enabled.parse::<bool>().unwrap_or(true)).unwrap();
         }
         if let Ok(api_key) = std::env::var("RAIDERIO_API_KEY") {
             builder = builder.set_override("raider_io.api_key", api_key).unwrap();

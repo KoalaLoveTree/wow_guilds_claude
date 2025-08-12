@@ -3,6 +3,8 @@ use serenity::async_trait;
 use serenity::model::application::interaction::{Interaction, InteractionResponseType};
 use serenity::model::application::command::Command;
 use serenity::model::gateway::Ready;
+use serenity::model::guild::Member;
+use serenity::model::id::RoleId;
 use serenity::prelude::*;
 use std::env;
 use tracing::{error, info, warn};
@@ -155,6 +157,67 @@ impl EventHandler for Handler {
             }
         }
     }
+
+    async fn guild_member_addition(&self, ctx: Context, mut new_member: Member) {
+        // Check if auto-role assignment is enabled
+        if !self.config.discord.auto_role_enabled {
+            return;
+        }
+
+        // Get the role ID from config
+        let Some(role_id_str) = &self.config.discord.auto_role_id else {
+            warn!("Auto-role is enabled but no role ID configured");
+            return;
+        };
+
+        // Parse role ID
+        let role_id = match role_id_str.parse::<u64>() {
+            Ok(id) => RoleId(id),
+            Err(e) => {
+                error!("Failed to parse auto-role ID '{}': {}", role_id_str, e);
+                return;
+            }
+        };
+
+        info!(
+            user = %new_member.user.name,
+            user_id = new_member.user.id.0,
+            guild = %new_member.guild_id,
+            role_id = role_id.0,
+            "New member joined, assigning auto-role"
+        );
+
+        // Check if user already has the role (shouldn't happen for new members, but safety check)
+        if new_member.roles.contains(&role_id) {
+            info!(
+                user = %new_member.user.name,
+                role_id = role_id.0,
+                "User already has the auto-role, skipping"
+            );
+            return;
+        }
+
+        // Assign the role
+        match new_member.add_role(&ctx.http, role_id).await {
+            Ok(()) => {
+                info!(
+                    user = %new_member.user.name,
+                    user_id = new_member.user.id.0,
+                    role_id = role_id.0,
+                    "Successfully assigned auto-role to new member"
+                );
+            }
+            Err(e) => {
+                error!(
+                    user = %new_member.user.name,
+                    user_id = new_member.user.id.0,
+                    role_id = role_id.0,
+                    error = %e,
+                    "Failed to assign auto-role to new member"
+                );
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -229,7 +292,9 @@ async fn show_database_status(database: &Database) -> Result<()> {
 async fn run_discord_bot(config: AppConfig, database: Database) -> Result<()> {
     info!("Starting Discord bot...");
 
-    let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::DIRECT_MESSAGES;
+    let intents = GatewayIntents::GUILD_MESSAGES 
+        | GatewayIntents::DIRECT_MESSAGES 
+        | GatewayIntents::GUILD_MEMBERS;  // Enable after setting up intents in Discord Portal
 
     let mut client = Client::builder(&config.discord.token, intents)
         .event_handler(Handler::new(config, database))
