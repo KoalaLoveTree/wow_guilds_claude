@@ -3,7 +3,6 @@ use serenity::model::application::interaction::application_command::ApplicationC
 use serenity::model::application::command::CommandOptionType;
 use crate::config::AppConfig;
 use crate::guild_data::{fetch_all_guild_data, sort_guilds, format_guild_list};
-use crate::tournament::{read_members_data, get_tournament_players, fetch_tournament_data_from_sheets};
 use crate::raider_io::PlayerData;
 use crate::types::RaidTier;
 
@@ -68,32 +67,6 @@ pub fn rank_command(command: &mut CreateApplicationCommand) -> &mut CreateApplic
         })
 }
 
-pub fn tournament_command(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
-    command
-        .name("tournament")
-        .description("Get top players in a guild for a tournament")
-        .create_option(|option| {
-            option
-                .name("guild")
-                .description("Guild name for the tournament")
-                .kind(CommandOptionType::String)
-                .required(false)
-        })
-        .create_option(|option| {
-            option
-                .name("top")
-                .description("Number of players to display (default: 5)")
-                .kind(CommandOptionType::Integer)
-                .required(false)
-        })
-        .create_option(|option| {
-            option
-                .name("format")
-                .description("Data source format: new or old (default: new)")
-                .kind(CommandOptionType::String)
-                .required(false)
-        })
-}
 
 pub fn about_us_command(command: &mut CreateApplicationCommand) -> &mut CreateApplicationCommand {
     command.name("about_us").description("About us")
@@ -206,7 +179,10 @@ pub async fn handle_rank_command(command: &ApplicationCommandInteraction) -> Str
         return format!("Role '{}' does not exist. Use the valid roles: all, dps, healer, tank.", role);
     }
 
-    match read_members_data("members.json") {
+    // TODO: Replace with database query
+    match std::fs::read_to_string("members.json").and_then(|content| {
+        serde_json::from_str::<Vec<PlayerData>>(&content).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    }) {
         Ok(mut players) => {
             println!("Loaded {} players from members.json", players.len());
             println!("Filtering: class='{}', role='{}', guilds='{}', rio>{}", class_filter, role, guilds, rio);
@@ -322,61 +298,17 @@ pub async fn handle_rank_command(command: &ApplicationCommandInteraction) -> Str
     }
 }
 
-pub async fn handle_tournament_command(command: &ApplicationCommandInteraction) -> String {
-    let guild = command
-        .data
-        .options
-        .iter()
-        .find(|opt| opt.name == "guild")
-        .and_then(|opt| opt.value.as_ref().and_then(|v| v.as_str()))
-        .unwrap_or("Нехай Щастить");
-
-    let top = command
-        .data
-        .options
-        .iter()
-        .find(|opt| opt.name == "top")
-        .and_then(|opt| opt.value.as_ref().and_then(|v| v.as_i64()))
-        .unwrap_or(5) as usize;
-
-    let format = command
-        .data
-        .options
-        .iter()
-        .find(|opt| opt.name == "format")
-        .and_then(|opt| opt.value.as_ref().and_then(|v| v.as_str()))
-        .unwrap_or("new");
-
-    let players = if format == "new" {
-        match fetch_tournament_data_from_sheets(
-            "https://docs.google.com/spreadsheets/d/1YdZRWVXzOXaIZfb9YXDfqHEaeaVnv_3j4EykUZ4Kf4E/export?format=csv"
-        ).await {
-            Ok(players) => players,
-            Err(e) => return format!("Error fetching tournament data from Google Sheets: {}", e),
-        }
-    } else {
-        match read_members_data("members.json") {
-            Ok(players) => players,
-            Err(e) => return format!("No data available in members.json: {}", e),
-        }
-    };
-
-    if players.is_empty() {
-        return "No player data available.".to_string();
-    }
-
-    let guild_filter = if format == "old" { Some(guild) } else { None };
-    let roster = get_tournament_players(&players, guild_filter, top);
-    
-    format!("Top {} Players for the Tournament:\n\n{}", top, roster.format(format == "new"))
-}
 
 pub async fn handle_about_us_command() -> String {
-    "https://youtu.be/xvpVTd1gt5Q".to_string()
+    "https://www.wowprogress.com/guild/eu/tarren-mill/Thorned+Horde".to_string()
 }
 
-pub async fn handle_rules_command() -> String {
-    "https://cdn.discordapp.com/attachments/786720808788688918/1202356554523742289/image.png?ex=65e8d84d&is=65d6634d&hm=dee787e24cb77005a58568556547af37a24fe98bfcb11c1f6ecabc1bf72842ff&".to_string()
+pub async fn handle_rules_command(config: &AppConfig) -> String {
+    if let (Some(server_id), Some(channel_id)) = (&config.discord.server_id, &config.discord.rules_channel_id) {
+        format!("Please check the rules in our dedicated channel: https://discord.com/channels/{}/{}", server_id, channel_id)
+    } else {
+        "Rules channel not configured. Please contact an administrator.".to_string()
+    }
 }
 
 pub async fn handle_help_command() -> String {
@@ -392,9 +324,6 @@ pub async fn handle_help_command() -> String {
        -role: Player role to filter (all, dps, healer, tank, or class:spec number).
        -rio: Minimum RIO score to display (0-3500, default is 2000).
 
-/tournament - Get top players in each category.            
-       -guild: Top players of which guild will be searched.
-       -top: Top X players.
 
 /about_us - Learn more about us.
 

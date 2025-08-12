@@ -16,7 +16,6 @@ mod guild_data;
 mod logging;
 mod parser;
 mod raider_io;
-mod tournament;
 mod types;
 
 // Re-exports for convenience
@@ -67,7 +66,6 @@ impl EventHandler for Handler {
             commands
                 .create_application_command(|command| commands::guilds_command(command))
                 .create_application_command(|command| commands::rank_command(command))
-                .create_application_command(|command| commands::tournament_command(command))
                 .create_application_command(|command| commands::about_us_command(command))
                 .create_application_command(|command| commands::rules_command(command))
                 .create_application_command(|command| commands::help_command(command))
@@ -97,7 +95,7 @@ impl EventHandler for Handler {
             // For simple commands, respond immediately
             let content = match command_name.as_str() {
                 "about_us" => commands::handle_about_us_command().await,
-                "rules" => commands::handle_rules_command().await,
+                "rules" => commands::handle_rules_command(&self.config).await,
                 "help" => commands::handle_help_command().await,
                 _ => {
                     // For complex commands that might take time, defer the response
@@ -120,7 +118,6 @@ impl EventHandler for Handler {
                             commands::handle_guilds_command(&command, &self.config).await
                         },
                         "rank" => commands::handle_rank_command(&command).await,
-                        "tournament" => commands::handle_tournament_command(&command).await,
                         _ => {
                             warn!(command = %command_name, "Unknown command received");
                             "❓ Unknown command".to_string()

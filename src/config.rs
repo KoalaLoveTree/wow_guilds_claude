@@ -20,6 +20,8 @@ pub struct AppConfig {
 pub struct DiscordConfig {
     pub token: String,
     pub guild_id: Option<u64>,
+    pub server_id: Option<String>,
+    pub rules_channel_id: Option<String>,
 }
 
 /// Raider.io API configuration
@@ -114,6 +116,8 @@ impl Default for DiscordConfig {
         Self {
             token: String::new(),
             guild_id: None,
+            server_id: None,
+            rules_channel_id: None,
         }
     }
 }
@@ -200,6 +204,12 @@ impl AppConfig {
         // Map legacy environment variables
         if let Ok(token) = std::env::var("DISCORD_TOKEN") {
             builder = builder.set_override("discord.token", token).unwrap();
+        }
+        if let Ok(server_id) = std::env::var("DISCORD_SERVER_ID") {
+            builder = builder.set_override("discord.server_id", server_id).unwrap();
+        }
+        if let Ok(channel_id) = std::env::var("DISCORD_RULES_CHANNEL_ID") {
+            builder = builder.set_override("discord.rules_channel_id", channel_id).unwrap();
         }
         if let Ok(api_key) = std::env::var("RAIDERIO_API_KEY") {
             builder = builder.set_override("raider_io.api_key", api_key).unwrap();
