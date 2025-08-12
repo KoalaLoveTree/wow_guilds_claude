@@ -127,8 +127,8 @@ impl Default for RaiderIoConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            requests_per_second: 10,
-            concurrent_requests: 5,
+            requests_per_second: 50,    // Increased from 10 to match Python bot speed
+            concurrent_requests: 25,    // Increased from 5 to match Python concurrency
             retry_attempts: 3,
             retry_delay_secs: 30,
         }

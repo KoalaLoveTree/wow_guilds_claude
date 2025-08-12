@@ -96,16 +96,10 @@ pub async fn fetch_all_guild_data(tier: RaidTier, config: &AppConfig) -> Result<
     
     info!("Fetching data for {} guilds", guild_urls.len());
     
-    // Limit concurrent requests to avoid overwhelming the API
-    let results = stream::iter(guild_urls.into_iter().enumerate().map(|(i, url)| {
+    // Concurrent guild data fetching (like Python bot - no artificial delays)
+    let results = stream::iter(guild_urls.into_iter().map(|url| {
         let client = &client;
         async move {
-            // Rate limiting
-            let delay_ms = config.request_delay_ms();
-            if i > 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-            }
-            
             debug!("Fetching guild data for: {}", url);
             
             match client.fetch_guild_data(&url, tier).await {
