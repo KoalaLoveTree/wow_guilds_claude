@@ -59,10 +59,6 @@ RUN mkdir -p /app/data && chown appuser:appuser /app/data
 # Switch to non-root user
 USER appuser
 
-# Set environment variables for production
-ENV RUST_LOG=info
-ENV DATABASE_URL=sqlite:///app/data/wow_guild_bot.db
-
 # Expose port (Dokku will set PORT environment variable)
 EXPOSE 8080
 

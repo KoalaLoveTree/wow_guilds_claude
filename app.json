@@ -1,0 +1,8 @@
+{
+  "cron" : [
+    {
+      "command" : "/app/wow_guild_bot parse",
+      "schedule" : "0 4 * * *"
+    }
+  ]
+}
