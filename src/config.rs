@@ -34,6 +34,7 @@ pub struct RaiderIoConfig {
     pub timeout_secs: u64,
     pub season: String,
     pub region: Region,
+    pub default_season: u8,
 }
 
 /// Rate limiting configuration
@@ -132,8 +133,9 @@ impl Default for RaiderIoConfig {
             api_key: None,
             base_url: "https://raider.io/api/v1".to_string(),
             timeout_secs: 15,
-            season: "current".to_string(),
+            season: "season-tww-3".to_string(),
             region: Region::Eu,
+            default_season: 3,
         }
     }
 }
@@ -226,6 +228,11 @@ impl AppConfig {
         }
         if let Ok(season) = std::env::var("SEASON") {
             builder = builder.set_override("raider_io.season", season).unwrap();
+        }
+        if let Ok(default_season) = std::env::var("DEFAULT_SEASON") {
+            if let Ok(season_num) = default_season.parse::<u8>() {
+                builder = builder.set_override("raider_io.default_season", season_num).unwrap();
+            }
         }
         
         builder.build().unwrap_or_else(|_| Config::default())

@@ -132,6 +132,61 @@ pub async fn fetch_all_guild_data(tier: RaidTier, config: &AppConfig) -> Result<
     Ok(guilds)
 }
 
+/// Difficulty levels in order of importance (higher = better)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Difficulty {
+    Lfr = 1,
+    Normal = 2,
+    Heroic = 3,
+    Mythic = 4,
+}
+
+impl Difficulty {
+    fn from_progress(progress: &str) -> Self {
+        let difficulty_char = progress.chars().last().unwrap_or('N');
+        match difficulty_char {
+            'M' => Difficulty::Mythic,
+            'H' => Difficulty::Heroic,
+            'N' => Difficulty::Normal,
+            _ => {
+                // Check for LFR
+                if progress.contains("LFR") {
+                    Difficulty::Lfr
+                } else {
+                    Difficulty::Normal
+                }
+            }
+        }
+    }
+}
+
+/// Parse progression string to extract boss count and difficulty
+fn parse_progression(progress: &str) -> (u8, Difficulty) {
+    // Parse "X/8 M" format
+    let boss_count = progress.split('/')
+        .next()
+        .and_then(|s| s.trim().parse::<u8>().ok())
+        .unwrap_or(0);
+    
+    let difficulty = Difficulty::from_progress(progress);
+    (boss_count, difficulty)
+}
+
+/// Compare two progressions considering difficulty hierarchy
+fn compare_progression(progress_a: &str, progress_b: &str) -> std::cmp::Ordering {
+    let (bosses_a, diff_a) = parse_progression(progress_a);
+    let (bosses_b, diff_b) = parse_progression(progress_b);
+    
+    // First compare difficulty (Mythic > Heroic > Normal > LFR)
+    match diff_a.cmp(&diff_b) {
+        std::cmp::Ordering::Equal => {
+            // Same difficulty, compare boss count
+            bosses_a.cmp(&bosses_b)
+        }
+        other => other
+    }
+}
+
 /// Sort guilds by progression and rank
 pub fn sort_guilds(mut guilds: Vec<GuildData>) -> Vec<GuildData> {
     guilds.sort_by(|a, b| {
@@ -144,8 +199,14 @@ pub fn sort_guilds(mut guilds: Vec<GuildData>) -> Vec<GuildData> {
             (Some(_), None) => std::cmp::Ordering::Less,  // Ranked guilds come first
             (None, Some(_)) => std::cmp::Ordering::Greater, // Unranked guilds come last
             (None, None) => {
-                // If no ranks, sort by best percent descending
-                b.best_percent.partial_cmp(&a.best_percent).unwrap_or(std::cmp::Ordering::Equal)
+                // If no ranks, sort by progression considering difficulty hierarchy
+                match compare_progression(&b.progress, &a.progress) {
+                    std::cmp::Ordering::Equal => {
+                        // Same progression, sort by best percent descending
+                        b.best_percent.partial_cmp(&a.best_percent).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    other => other
+                }
             }
         }
     });
@@ -315,5 +376,107 @@ mod tests {
         let sorted = sort_guilds(guilds);
         assert_eq!(sorted[0].name.to_string(), "Guild A");
         assert_eq!(sorted[1].name.to_string(), "Guild B");
+    }
+
+    #[test]
+    fn test_difficulty_aware_ranking() {
+        // Test the specific case: 8/8 N should rank LOWER than 2/8 H
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("Normal Guild"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 N".to_string(),  // Full normal clear
+                rank: None,  // No world rank
+                best_percent: 100.0,
+                pull_count: None,
+            },
+            GuildData {
+                name: GuildName::from("Heroic Guild"),
+                realm: RealmName::from("realm1"),
+                progress: "2/8 H".to_string(),  // 2 heroic bosses
+                rank: None,  // No world rank
+                best_percent: 25.0,
+                pull_count: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        // Heroic guild should rank higher than Normal guild
+        assert_eq!(sorted[0].name.to_string(), "Heroic Guild");
+        assert_eq!(sorted[1].name.to_string(), "Normal Guild");
+    }
+
+    #[test]
+    fn test_difficulty_hierarchy() {
+        // Test full difficulty hierarchy: M > H > N > LFR
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("LFR Guild"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 LFR".to_string(),
+                rank: None,
+                best_percent: 100.0,
+                pull_count: None,
+            },
+            GuildData {
+                name: GuildName::from("Normal Guild"),
+                realm: RealmName::from("realm1"),
+                progress: "1/8 N".to_string(),
+                rank: None,
+                best_percent: 12.5,
+                pull_count: None,
+            },
+            GuildData {
+                name: GuildName::from("Heroic Guild"),
+                realm: RealmName::from("realm1"),
+                progress: "1/8 H".to_string(),
+                rank: None,
+                best_percent: 12.5,
+                pull_count: None,
+            },
+            GuildData {
+                name: GuildName::from("Mythic Guild"),
+                realm: RealmName::from("realm1"),
+                progress: "1/8 M".to_string(),
+                rank: None,
+                best_percent: 12.5,
+                pull_count: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        // Should be ordered: Mythic > Heroic > Normal > LFR
+        assert_eq!(sorted[0].name.to_string(), "Mythic Guild");
+        assert_eq!(sorted[1].name.to_string(), "Heroic Guild");
+        assert_eq!(sorted[2].name.to_string(), "Normal Guild");
+        assert_eq!(sorted[3].name.to_string(), "LFR Guild");
+    }
+
+    #[test]
+    fn test_same_difficulty_boss_count() {
+        // Test that within same difficulty, more bosses rank higher
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("3 Heroic"),
+                realm: RealmName::from("realm1"),
+                progress: "3/8 H".to_string(),
+                rank: None,
+                best_percent: 37.5,
+                pull_count: None,
+            },
+            GuildData {
+                name: GuildName::from("5 Heroic"),
+                realm: RealmName::from("realm1"),
+                progress: "5/8 H".to_string(),
+                rank: None,
+                best_percent: 62.5,
+                pull_count: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        // 5/8 H should rank higher than 3/8 H
+        assert_eq!(sorted[0].name.to_string(), "5 Heroic");
+        assert_eq!(sorted[1].name.to_string(), "3 Heroic");
     }
 }

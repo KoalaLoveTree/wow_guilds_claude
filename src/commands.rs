@@ -88,7 +88,7 @@ pub async fn handle_guilds_command(command: &ApplicationCommandInteraction, conf
         .iter()
         .find(|opt| opt.name == "season")
         .and_then(|opt| opt.value.as_ref().and_then(|v| v.as_i64()))
-        .unwrap_or(2) as u8;
+        .unwrap_or(config.raider_io.default_season as i64) as u8;
 
     let limit_str = command
         .data
@@ -315,7 +315,7 @@ pub async fn handle_help_command() -> String {
     r#"**Available Commands:**
 
 /guilds - Get guild raid ranks in the current addon.
-       -season: Season number (1, 2, or 3, default is 2).
+       -season: Season number (1, 2, or 3, default is configurable).
 
 /rank - Get player ranks in the current M+ season.            
        -top: Number of top players to display (1-50, default is 10).

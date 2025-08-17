@@ -24,7 +24,7 @@ pub struct WowClass(String);
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SpecName(String);
 
-/// A season identifier (e.g., "current", "season-tww-2")
+/// A season identifier (e.g., "current", "season-tww-3")
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Season(String);
 
@@ -390,6 +390,10 @@ impl RaidTier {
 
     pub fn liberation_of_undermine() -> Self {
         Self(2)
+    }
+
+    pub fn manaforge_omega() -> Self {
+        Self(3)
     }
 }
 

@@ -184,6 +184,7 @@ impl RaiderIOClient {
         match tier.value() {
             1 => Ok("nerubar-palace"),
             2 => Ok("liberation-of-undermine"),
+            3 => Ok("manaforge-omega"),
             _ => Err(BotError::invalid_input(format!("Unsupported raid tier: {}", tier))),
         }
     }
@@ -199,6 +200,20 @@ impl RaiderIOClient {
             "onearmed-bandit",
             "mugzee-heads-of-security",
             "chrome-king-gallywix"
+        ]
+    }
+
+    /// Get boss names for manaforge-omega raid
+    fn get_manaforge_boss_names() -> &'static [&'static str] {
+        &[
+            "plexus-sentinel",
+            "loomithar",
+            "soulbinder-naazindhri",
+            "forgeweaver-araz",
+            "the-soul-hunters",
+            "fractillus",
+            "nexus-king-salhadaar",
+            "dimensius"
         ]
     }
 
@@ -347,6 +362,15 @@ impl RaiderIOClient {
                 // Full clear, no next boss
                 return Ok((100.0, None));
             }
+        } else if tier.value() == 3 { // manaforge-omega
+            // For progression data, get the NEXT boss they're working on
+            // If they're 5/8, get the 6th boss (index 5)
+            if current_progress < 8 {
+                Self::get_manaforge_boss_names().get(current_progress).copied()
+            } else {
+                // Full clear, no next boss
+                return Ok((100.0, None));
+            }
         } else if tier.value() == 1 { // nerubar-palace
             // Add Nerubar Palace boss names if needed
             Some("ulgrax-the-devourer") // First boss as fallback
@@ -443,6 +467,8 @@ impl RaiderIOClient {
         // Try the next boss (current progress index)
         let next_boss_name = if tier.value() == 2 { // liberation-of-undermine
             Self::get_liberation_boss_names().get(current_progress).copied()
+        } else if tier.value() == 3 { // manaforge-omega
+            Self::get_manaforge_boss_names().get(current_progress).copied()
         } else {
             None
         };
@@ -636,6 +662,7 @@ mod tests {
     fn test_raid_name_mapping() {
         assert_eq!(RaiderIOClient::get_raid_name(RaidTier::from(1)).unwrap(), "nerubar-palace");
         assert_eq!(RaiderIOClient::get_raid_name(RaidTier::from(2)).unwrap(), "liberation-of-undermine");
+        assert_eq!(RaiderIOClient::get_raid_name(RaidTier::from(3)).unwrap(), "manaforge-omega");
         assert!(RaiderIOClient::get_raid_name(RaidTier::from(99)).is_err());
     }
 }
