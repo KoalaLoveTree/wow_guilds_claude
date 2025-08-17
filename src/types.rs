@@ -32,9 +32,9 @@ pub struct Season(String);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct RaidTier(u8);
 
-/// Mythic+ rating/score
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-pub struct MythicPlusScore(u32);
+/// Mythic+ rating/score (supports floating point values from raider.io)
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct MythicPlusScore(f64);
 
 /// World rank
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -308,46 +308,75 @@ impl From<&str> for Season {
 
 // Implementations for MythicPlusScore
 impl MythicPlusScore {
-    pub fn new(score: u32) -> Self {
-        Self(score)
+    pub fn new(score: f64) -> Self {
+        Self(score.max(0.0)) // Ensure non-negative
     }
 
-    pub fn value(&self) -> u32 {
+    pub fn value(&self) -> f64 {
         self.0
+    }
+    
+    pub fn value_as_u32(&self) -> u32 {
+        self.0.round() as u32
     }
 
     pub fn zero() -> Self {
-        Self(0)
+        Self(0.0)
     }
 }
 
+impl PartialOrd<f64> for MythicPlusScore {
+    fn partial_cmp(&self, other: &f64) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(other)
+    }
+}
+
+impl PartialEq<f64> for MythicPlusScore {
+    fn eq(&self, other: &f64) -> bool {
+        (self.0 - other).abs() < f64::EPSILON
+    }
+}
+
+// Backward compatibility with u32
 impl PartialOrd<u32> for MythicPlusScore {
     fn partial_cmp(&self, other: &u32) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(other)
+        self.0.partial_cmp(&(*other as f64))
     }
 }
 
 impl PartialEq<u32> for MythicPlusScore {
     fn eq(&self, other: &u32) -> bool {
-        self.0 == *other
+        (self.0 - (*other as f64)).abs() < f64::EPSILON
     }
 }
 
 impl fmt::Display for MythicPlusScore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{:.1}", self.0)
+    }
+}
+
+impl From<f64> for MythicPlusScore {
+    fn from(score: f64) -> Self {
+        Self::new(score)
     }
 }
 
 impl From<u32> for MythicPlusScore {
     fn from(score: u32) -> Self {
-        Self::new(score)
+        Self::new(score as f64)
+    }
+}
+
+impl From<MythicPlusScore> for f64 {
+    fn from(score: MythicPlusScore) -> Self {
+        score.0
     }
 }
 
 impl From<MythicPlusScore> for u32 {
     fn from(score: MythicPlusScore) -> Self {
-        score.0
+        score.value_as_u32()
     }
 }
 

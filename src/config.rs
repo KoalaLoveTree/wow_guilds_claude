@@ -174,8 +174,8 @@ impl Default for LoggingConfig {
         Self {
             level: "info".to_string(),
             format: LogFormat::Pretty,
-            file_enabled: false,
-            file_path: None,
+            file_enabled: true, // Enable file logging by default for error tracking
+            file_path: Some("logs/bot_errors.log".to_string()),
         }
     }
 }
@@ -233,6 +233,19 @@ impl AppConfig {
             if let Ok(season_num) = default_season.parse::<u8>() {
                 builder = builder.set_override("raider_io.default_season", season_num).unwrap();
             }
+        }
+        
+        // Logging configuration
+        if let Ok(log_level) = std::env::var("LOG_LEVEL") {
+            builder = builder.set_override("logging.level", log_level).unwrap();
+        }
+        if let Ok(log_file_enabled) = std::env::var("LOG_FILE_ENABLED") {
+            if let Ok(enabled) = log_file_enabled.parse::<bool>() {
+                builder = builder.set_override("logging.file_enabled", enabled).unwrap();
+            }
+        }
+        if let Ok(log_file_path) = std::env::var("LOG_FILE_PATH") {
+            builder = builder.set_override("logging.file_path", log_file_path).unwrap();
         }
         
         builder.build().unwrap_or_else(|_| Config::default())

@@ -29,6 +29,16 @@ pub async fn generate_members_data() -> Result<()> {
     
     // Process guilds to get member lists
     for (i, url) in guild_urls.iter().enumerate() {
+        let guild_progress = i + 1;
+        
+        crate::log_data_processing!("fetching guild rosters", guild_progress, guild_urls.len());
+        info!(
+            "Processing guild {}/{}: {}", 
+            guild_progress, 
+            guild_urls.len(), 
+            url
+        );
+        
         if let Ok(guild_data) = fetch_guild_members(&client, &url).await {
             if let Some(members) = guild_data.get("members").and_then(|m| m.as_array()) {
                 let guild_name = guild_data.get("name").and_then(|n| n.as_str()).unwrap_or("Unknown");
@@ -60,7 +70,13 @@ pub async fn generate_members_data() -> Result<()> {
                         }
                     }
                 }
-                println!("Processed guild: {} ({} members)", guild_name, members.len());
+                info!(
+                    guild = guild_name,
+                    members_count = members.len(),
+                    progress = guild_progress,
+                    total = guild_urls.len(),
+                    "Successfully processed guild roster"
+                );
             }
         }
         
@@ -72,7 +88,8 @@ pub async fn generate_members_data() -> Result<()> {
     
     // Additional characters functionality removed - all member data now comes from guild rosters
     
-    println!("Fetching RIO data for {} players...", data_dict.len());
+    info!("Collected {} unique players from guild rosters", data_dict.len());
+    crate::log_data_processing!("collecting players from rosters", data_dict.len(), data_dict.len());
     
     // Database will be used instead of JSON file
     info!("Storing member data in temporary database table...");
@@ -85,7 +102,8 @@ pub async fn generate_members_data() -> Result<()> {
     let mut final_players = Vec::new();
     let mut players_written = 0;
     
-    println!("Processing {} players at 10 requests/second (writing every 100 players)...", total_players);
+    info!("Starting RIO data fetch for {} players at 10 requests/second (writing every 100 players)...", total_players);
+    crate::log_data_processing!("starting RIO data fetch", 0, total_players);
     
     let mut results = stream::iter(players.into_iter().enumerate().map(|(i, (realm, name))| {
         let client = &client;
@@ -96,24 +114,29 @@ pub async fn generate_members_data() -> Result<()> {
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
             
+            // Log concise progress for each player
+            println!("[{}/{}] Fetching RIO data for {}-{}", i + 1, total_players, name, realm);
+            
             let guild = data_dict.get(&(realm.clone(), name.clone()))
                 .and_then(|p| p.guild.clone());
                 
             // Retry logic for rate limiting
             let mut attempts = 0;
-            let max_attempts = 3;
+            let max_attempts = 10;
             
             loop {
                 match client.fetch_player_data(&RealmName::from(realm.clone()), &PlayerName::from(name.clone()), guild.clone()).await {
                     Ok(Some(player_data)) => {
+                        println!("[{}/{}] ✓ {}-{} (RIO: {:.1})", i + 1, total_players, player_data.name, player_data.realm, player_data.rio_all.value());
                         if (i + 1) % 100 == 0 {
-                            println!("Fetched RIO data for: {} ({}/{})", player_data.name, i + 1, total_players);
+                            crate::log_data_processing!("fetching player RIO data", i + 1, total_players);
                         }
                         return Some((player_data, true, i));
                     }
                     Ok(None) => {
+                        println!("[{}/{}] - {}-{} (No RIO data)", i + 1, total_players, name, realm);
                         if (i + 1) % 500 == 0 {
-                            println!("No RIO data found for: {} - {} ({}/{})", name, realm, i + 1, total_players);
+                            crate::log_data_processing!("fetching player RIO data (with missing data)", i + 1, total_players);
                         }
                         return Some((PlayerData {
                             name: PlayerName::from(name.clone()),
@@ -138,8 +161,24 @@ pub async fn generate_members_data() -> Result<()> {
                         // Check if it's a rate limit error
                         if error_msg.contains("429") || error_msg.contains("rate") || error_msg.contains("limit") {
                             if attempts < max_attempts {
-                                println!("Rate limited on {}-{}, waiting 30 seconds... (attempt {}/{})", name, realm, attempts, max_attempts);
-                                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                                warn!(
+                                    player = %name,
+                                    realm = %realm,
+                                    attempt = attempts,
+                                    max_attempts = max_attempts,
+                                    progress = i + 1,
+                                    total = total_players,
+                                    "Rate limited, waiting 10 seconds before retry"
+                                );
+                                crate::log_rate_limit!("raider.io", 10000);
+                                
+                                println!("[{}/{}] Rate limited on {}-{}, waiting 10 seconds (attempt {}/{})", i + 1, total_players, name, realm, attempts + 1, max_attempts);
+                                for j in 1..=10 {
+                                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                                    if j % 2 == 0 {
+                                        println!("  [Rate Limited] {}s remaining...", 10 - j);
+                                    }
+                                }
                                 continue;
                             }
                         }
@@ -147,15 +186,31 @@ pub async fn generate_members_data() -> Result<()> {
                         // Check if it's a server error (5xx)
                         if error_msg.contains("500") || error_msg.contains("502") || error_msg.contains("503") {
                             if attempts < max_attempts {
-                                println!("Server error for {}-{}, retrying in 5 seconds... (attempt {}/{})", name, realm, attempts, max_attempts);
-                                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                                warn!(
+                                    player = %name,
+                                    realm = %realm,
+                                    attempt = attempts,
+                                    max_attempts = max_attempts,
+                                    progress = i + 1,
+                                    total = total_players,
+                                    error = %error_msg,
+                                    "Server error, retrying in 10 seconds"
+                                );
+                                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                                 continue;
                             }
                         }
                         
-                        if (i + 1) % 1000 == 0 || attempts >= max_attempts {
-                            eprintln!("Failed to fetch RIO data for {} - {} after {} attempts: {}", name, realm, attempts, e);
-                        }
+                        println!("[{}/{}] ✗ {}-{} (Failed: {})", i + 1, total_players, name, realm, e);
+                        error!(
+                            player = %name,
+                            realm = %realm,
+                            attempts = attempts,
+                            progress = i + 1,
+                            total = total_players,
+                            error = %e,
+                            "Failed to fetch RIO data after max attempts"
+                        );
                         
                         return Some((PlayerData {
                             name: PlayerName::from(name.clone()),
@@ -191,6 +246,16 @@ pub async fn generate_members_data() -> Result<()> {
             
             // Store in database every 100 players or on the last player
             if final_players.len() % 100 == 0 || final_players.len() == total_players {
+                // Log database write progress
+                let batch_size = final_players.len() - players_written;
+                info!(
+                    "Writing batch of {} players to database (total processed: {}/{})",
+                    batch_size,
+                    final_players.len(),
+                    total_players
+                );
+                crate::log_data_processing!("writing to database", final_players.len(), total_players);
+                
                 // Convert and store batch in temporary table
                 for player in final_players.iter().skip(players_written) {
                     let db_member = DbMember {
@@ -221,7 +286,12 @@ pub async fn generate_members_data() -> Result<()> {
                 }
                 
                 players_written = final_players.len();
-                info!("Stored {} players in database", players_written);
+                info!(
+                    stored_count = players_written,
+                    successful_fetches = successful_fetches,
+                    failed_fetches = failed_fetches,
+                    "Successfully stored player batch in database"
+                );
             }
         }
     }
@@ -233,12 +303,16 @@ pub async fn generate_members_data() -> Result<()> {
     // Get final statistics
     let (guild_count, member_count) = database.get_stats().await?;
     
-    info!("Completed data fetching:");
-    info!("  - Successfully fetched: {} players", successful_fetches);
-    info!("  - Failed/No data: {} players", failed_fetches);
-    info!("  - Total processed: {} players", final_players.len());
-    info!("  - Guilds in database: {}", guild_count);
-    info!("  - Members in database: {}", member_count);
+    crate::log_data_processing!("final data processing complete", final_players.len(), total_players);
+    
+    info!(
+        successful_fetches = successful_fetches,
+        failed_fetches = failed_fetches,
+        total_processed = final_players.len(),
+        guilds_in_db = guild_count,
+        members_in_db = member_count,
+        "Data fetching completed successfully"
+    );
     
     // Optional: Export JSON backup for compatibility with existing tools
     if config.data.backup_enabled {

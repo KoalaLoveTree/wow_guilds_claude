@@ -115,29 +115,73 @@ impl EventHandler for Handler {
 
                     info!("Executing command: {}", command_name);
 
-                    let content = match command_name.as_str() {
+                    match command_name.as_str() {
                         "guilds" => {
                             info!("Executing guilds command...");
-                            commands::handle_guilds_command(&command, &self.config).await
+                            let content = commands::handle_guilds_command(&command, &self.config).await;
+                            
+                            // Send follow-up response
+                            if let Err(why) = command
+                                .create_followup_message(&ctx.http, |response| {
+                                    response.content(&content)
+                                })
+                                .await
+                            {
+                                error!(command = %command_name, error = %why, "Failed to send follow-up");
+                            } else {
+                                info!(command = %command_name, user = user_id.0, response_length = content.len(), "Command completed successfully");
+                            }
                         },
-                        "rank" => commands::handle_rank_command(&command, &self.database).await,
+                        "rank" => {
+                            let messages = commands::handle_rank_command_multi(&command, &self.database).await;
+                            
+                            // Send first message as follow-up
+                            if let Some(first_message) = messages.first() {
+                                if let Err(why) = command
+                                    .create_followup_message(&ctx.http, |response| {
+                                        response.content(first_message)
+                                    })
+                                    .await
+                                {
+                                    error!(command = %command_name, error = %why, "Failed to send follow-up");
+                                    return;
+                                }
+                            }
+                            
+                            // Send additional messages as separate follow-ups
+                            for (i, message) in messages.iter().skip(1).enumerate() {
+                                if let Err(why) = command
+                                    .create_followup_message(&ctx.http, |response| {
+                                        response.content(message)
+                                    })
+                                    .await
+                                {
+                                    error!(command = %command_name, message_index = i + 2, error = %why, "Failed to send additional follow-up message");
+                                } else {
+                                    info!(command = %command_name, message_index = i + 2, "Additional follow-up message sent successfully");
+                                }
+                            }
+                            
+                            let total_length: usize = messages.iter().map(|m| m.len()).sum();
+                            info!(command = %command_name, user = user_id.0, messages_sent = messages.len(), total_length = total_length, "Command completed successfully");
+                        },
                         _ => {
                             warn!(command = %command_name, "Unknown command received");
-                            "❓ Unknown command".to_string()
+                            let content = "❓ Unknown command".to_string();
+                            
+                            // Send follow-up response
+                            if let Err(why) = command
+                                .create_followup_message(&ctx.http, |response| {
+                                    response.content(&content)
+                                })
+                                .await
+                            {
+                                error!(command = %command_name, error = %why, "Failed to send follow-up");
+                            } else {
+                                info!(command = %command_name, user = user_id.0, response_length = content.len(), "Command completed successfully");
+                            }
                         }
                     };
-
-                    // Send follow-up response
-                    if let Err(why) = command
-                        .create_followup_message(&ctx.http, |response| {
-                            response.content(&content)
-                        })
-                        .await
-                    {
-                        error!(command = %command_name, error = %why, "Failed to send follow-up");
-                    } else {
-                        info!(command = %command_name, user = user_id.0, response_length = content.len(), "Command completed successfully");
-                    }
                     return;
                 }
             };

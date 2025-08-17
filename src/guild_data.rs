@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::raider_io::{RaiderIOClient, GuildData};
 use crate::types::{GuildUrl, GuildName, PlayerName, RaidTier, RealmName};
 use futures::stream::{self, StreamExt};
+use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
 /// Read guild URLs from configuration file
@@ -98,28 +99,59 @@ pub async fn fetch_all_guild_data(tier: RaidTier, config: &AppConfig) -> Result<
         return Ok(Vec::new());
     }
     
-    info!("Fetching data for {} guilds", guild_urls.len());
+    let total_guilds = guild_urls.len();
+    info!("Fetching data for {} guilds", total_guilds);
+    crate::log_data_processing!("starting guild data fetch", 0, total_guilds);
+    
+    // Track progress
+    let progress_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     
     // Concurrent guild data fetching (like Python bot - no artificial delays)
     let results = stream::iter(guild_urls.into_iter().map(|url| {
         let client = &client;
+        let progress_counter = Arc::clone(&progress_counter);
         async move {
             debug!("Fetching guild data for: {}", url);
             
-            match client.fetch_guild_data(&url, tier).await {
+            let result = match client.fetch_guild_data(&url, tier).await {
                 Ok(Some(guild)) => {
-                    info!("Successfully fetched data for guild: {}", guild.name);
+                    let current = progress_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    info!(
+                        guild = %guild.name,
+                        realm = %guild.realm,
+                        progress = current,
+                        total = total_guilds,
+                        "Successfully fetched guild data"
+                    );
+                    if current % 10 == 0 || current == total_guilds {
+                        crate::log_data_processing!("fetching guild data", current, total_guilds);
+                    }
                     Some(guild)
                 }
                 Ok(None) => {
-                    debug!("No data found for guild: {}", url);
+                    let current = progress_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    debug!(
+                        guild_url = %url,
+                        progress = current,
+                        total = total_guilds,
+                        "No data found for guild"
+                    );
                     None
                 }
                 Err(e) => {
-                    error!("Failed to fetch guild data for {}: {}", url, e);
+                    let current = progress_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                    error!(
+                        guild_url = %url,
+                        progress = current,
+                        total = total_guilds,
+                        error = %e,
+                        "Failed to fetch guild data"
+                    );
                     None
                 }
-            }
+            };
+            
+            result
         }
     }))
     .buffer_unordered(config.rate_limiting.concurrent_requests)
@@ -127,6 +159,16 @@ pub async fn fetch_all_guild_data(tier: RaidTier, config: &AppConfig) -> Result<
     .await;
     
     let guilds: Vec<GuildData> = results.into_iter().flatten().collect();
+    let successful_count = guilds.len();
+    let failed_count = total_guilds - successful_count;
+    
+    crate::log_data_processing!("guild data fetch complete", total_guilds, total_guilds);
+    info!(
+        successful = successful_count,
+        failed = failed_count,
+        total = total_guilds,
+        "Guild data fetching completed"
+    );
     info!("Successfully fetched data for {} guilds", guilds.len());
 
     Ok(guilds)
@@ -202,8 +244,8 @@ pub fn sort_guilds(mut guilds: Vec<GuildData>) -> Vec<GuildData> {
                 // If no ranks, sort by progression considering difficulty hierarchy
                 match compare_progression(&b.progress, &a.progress) {
                     std::cmp::Ordering::Equal => {
-                        // Same progression, sort by best percent descending
-                        b.best_percent.partial_cmp(&a.best_percent).unwrap_or(std::cmp::Ordering::Equal)
+                        // Same progression, sort by best percent ascending (lower is better)
+                        a.best_percent.partial_cmp(&b.best_percent).unwrap_or(std::cmp::Ordering::Equal)
                     }
                     other => other
                 }
@@ -232,13 +274,13 @@ pub fn format_guild_list(guilds: &[GuildData], limit: Option<usize>, show_all: b
     
     // Use code block for monospace alignment
     result.push_str("```");
-    result.push_str("Rank Guild Name                    Server        Progress  World Rank  Best\n");
-    result.push_str("──── ──────────────────────────── ───────────── ───────── ─────────── ────────────\n");
+    result.push_str("Rank Guild Name                              Server               Progress  World Rank  Best\n");
+    result.push_str("──── ──────────────────────────────────── ──────────────────── ───────── ─────────── ────────────\n");
     
     for (i, guild) in guilds.iter().take(display_count).enumerate() {
         let rank_num = format!("#{}", i + 1);
-        let guild_name = truncate_and_pad(&guild.name, 28);
-        let server = truncate_and_pad(&guild.realm.display_name(), 13);
+        let guild_name = truncate_and_pad(&guild.name, 40);
+        let server = truncate_and_pad(&guild.realm.display_name(), 20);
         let progress = truncate_and_pad(&guild.progress, 9);
         
         let world_rank = match &guild.rank {
@@ -261,7 +303,7 @@ pub fn format_guild_list(guilds: &[GuildData], limit: Option<usize>, show_all: b
         };
         
         result.push_str(&format!(
-            "{:<4} {:<28} {:<13} {:<9} {:<11} {}\n",
+            "{:<4} {:<40} {:<20} {:<9} {:<11} {}\n",
             rank_num,
             guild_name,
             server,

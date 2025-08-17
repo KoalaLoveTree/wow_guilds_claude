@@ -1,18 +1,24 @@
 /// Centralized logging configuration using tracing
 use crate::config::{LogFormat, LoggingConfig};
 use crate::error::Result;
-use tracing::{info, Level};
+use tracing::{error, info, warn, Level};
 // File logging support can be added later
 use tracing_subscriber::{
     EnvFilter,
+    fmt,
+    layer::SubscriberExt,
+    util::SubscriberInitExt,
+    Layer,
 };
+use std::fs;
+use std::path::Path;
 
 /// Initialize the logging system based on configuration
 pub fn init_logging(config: &LoggingConfig) -> Result<()> {
     let level = parse_log_level(&config.level)?;
     
-    // Create the base filter
-    let env_filter = EnvFilter::builder()
+    // Create the base filter for console (all levels)
+    let console_filter = EnvFilter::builder()
         .with_default_directive(level.into())
         .from_env_lossy()
         // Reduce noise from dependencies
@@ -22,29 +28,86 @@ pub fn init_logging(config: &LoggingConfig) -> Result<()> {
         .add_directive("tokio=warn".parse().unwrap())
         .add_directive("rustls=warn".parse().unwrap());
 
-    // Build the subscriber based on format
-    match config.format {
-        LogFormat::Json => {
-            tracing_subscriber::fmt()
-                .json()
-                .with_env_filter(env_filter)
-                .init();
-        },
-        LogFormat::Pretty => {
-            tracing_subscriber::fmt()
-                .pretty()
-                .with_env_filter(env_filter)
-                .init();
-        },
-        LogFormat::Compact => {
-            tracing_subscriber::fmt()
-                .compact()
-                .with_env_filter(env_filter)
-                .init();
-        },
+    if config.file_enabled {
+        // Setup file logging for errors and warnings only
+        let file_path = config.file_path.as_ref()
+            .map(|p| p.as_str())
+            .unwrap_or("logs/bot_errors.log");
+        
+        // Create logs directory if it doesn't exist
+        if let Some(parent) = Path::new(file_path).parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                crate::error::BotError::Application(format!("Failed to create log directory: {}", e))
+            })?;
+        }
+        
+        // Create simple summary log for general application logs
+        let summary_appender = tracing_appender::rolling::daily("logs", "summary.log");
+        let (summary_writer, summary_guard) = tracing_appender::non_blocking(summary_appender);
+        
+        // Keep the guard alive by leaking it (required for non-blocking appender)
+        std::mem::forget(summary_guard);
+        
+        // Create file filter for general app logs (info level)
+        let summary_filter = EnvFilter::builder()
+            .with_default_directive("info".parse().unwrap())
+            .from_env_lossy()
+            .add_directive("wow_guild_bot=info".parse().unwrap());
+        
+        // Create summary log layer (detailed errors go to individual files)
+        let summary_layer = fmt::layer()
+            .json()
+            .with_writer(summary_writer)
+            .with_filter(summary_filter);
+        
+        // Initialize with console and summary layers (detailed errors in individual files)
+        let subscriber = tracing_subscriber::registry()
+            .with(summary_layer);
+            
+        match config.format {
+            LogFormat::Json => {
+                subscriber
+                    .with(fmt::layer().json().with_filter(console_filter))
+                    .init();
+            },
+            LogFormat::Pretty => {
+                subscriber
+                    .with(fmt::layer().pretty().with_filter(console_filter))
+                    .init();
+            },
+            LogFormat::Compact => {
+                subscriber
+                    .with(fmt::layer().compact().with_filter(console_filter))
+                    .init();
+            },
+        }
+        
+        info!("Logging initialized with level: {} (console + summary: logs/summary.log + individual errors: logs/errors/)", config.level);
+    } else {
+        // Initialize with console layer only
+        match config.format {
+            LogFormat::Json => {
+                tracing_subscriber::fmt()
+                    .json()
+                    .with_env_filter(console_filter)
+                    .init();
+            },
+            LogFormat::Pretty => {
+                tracing_subscriber::fmt()
+                    .pretty()
+                    .with_env_filter(console_filter)
+                    .init();
+            },
+            LogFormat::Compact => {
+                tracing_subscriber::fmt()
+                    .compact()
+                    .with_env_filter(console_filter)
+                    .init();
+            },
+        }
+        
+        info!("Logging initialized with level: {} (console only)", config.level);
     }
-
-    info!("Logging initialized with level: {}", config.level);
 
     Ok(())
 }
@@ -152,10 +215,12 @@ mod tests {
     }
 
     #[test]
-    fn test_stdout_layer_creation() {
-        // This test just ensures the layers can be created without panicking
-        let _ = create_stdout_layer(LogFormat::Json);
-        let _ = create_stdout_layer(LogFormat::Pretty);
-        let _ = create_stdout_layer(LogFormat::Compact);
+    fn test_logging_config_creation() {
+        // Test default logging config
+        let config = LoggingConfig::default();
+        assert_eq!(config.level, "info");
+        assert_eq!(config.format, LogFormat::Pretty);
+        assert!(config.file_enabled);
+        assert!(config.file_path.is_some());
     }
 }

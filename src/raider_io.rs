@@ -7,7 +7,9 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{debug, info, instrument, warn};
+use std::fs;
+use tokio::time::sleep;
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
 
 /// Guild progression data from raider.io
@@ -121,17 +123,17 @@ struct MythicPlusSeasonScore {
     scores: MythicPlusScores,
 }
 
-/// Mythic+ score breakdown
+/// Mythic+ score breakdown (supports floating point values)
 #[derive(Debug, Clone, Deserialize)]
 struct MythicPlusScores {
-    all: Option<u32>,
-    dps: Option<u32>,
-    healer: Option<u32>,
-    tank: Option<u32>,
-    spec_0: Option<u32>,
-    spec_1: Option<u32>,
-    spec_2: Option<u32>,
-    spec_3: Option<u32>,
+    all: Option<f64>,
+    dps: Option<f64>,
+    healer: Option<f64>,
+    tank: Option<f64>,
+    spec_0: Option<f64>,
+    spec_1: Option<f64>,
+    spec_2: Option<f64>,
+    spec_3: Option<f64>,
 }
 
 /// HTTP client for raider.io API with rate limiting and error handling
@@ -142,6 +144,8 @@ pub struct RaiderIOClient {
     api_key: Option<String>,
     season: Season,
     request_id_header: String,
+    max_retries: u32,
+    base_delay_ms: u64,
 }
 
 impl RaiderIOClient {
@@ -167,6 +171,8 @@ impl RaiderIOClient {
             api_key: config.raider_io.api_key.clone(),
             season: Season::from(config.raider_io.season.clone()),
             request_id_header: format!("wow-guild-bot-{}", Uuid::new_v4()),
+            max_retries: 10, // Max retry attempts for rate limits
+            base_delay_ms: 10000, // 10 second delay for rate limits
         })
     }
 
@@ -217,6 +223,185 @@ impl RaiderIOClient {
         ]
     }
 
+    /// Save detailed error information to individual file
+    async fn save_error_details(&self, url: &str, method: &str, response_text: Option<String>, error: &BotError, attempt: u32) {
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f");
+        let error_filename = format!("{}_attempt_{}.json", timestamp, attempt);
+        let error_dir = "logs/errors";
+        
+        if let Err(_) = fs::create_dir_all(error_dir) {
+            return; // Can't create directory, skip saving
+        }
+        
+        let error_file = format!("{}/{}", error_dir, error_filename);
+        let error_data = serde_json::json!({
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "error_id": error_filename.replace(".json", ""),
+            "request": {
+                "method": method,
+                "url": url,
+                "attempt": attempt,
+                "max_retries": self.max_retries
+            },
+            "response": {
+                "body": response_text,
+            },
+            "error": {
+                "message": error.to_string(),
+                "type": format!("{:?}", error)
+            }
+        });
+        
+        if let Ok(json_str) = serde_json::to_string_pretty(&error_data) {
+            let _ = fs::write(error_file, json_str);
+        }
+    }
+
+    /// Execute HTTP request with retry logic for rate limits
+    async fn execute_request_with_retry(&self, url: &str) -> Result<reqwest::Response> {
+        let mut last_error: Option<BotError> = None;
+        
+        for attempt in 0..=self.max_retries {
+            let start = std::time::Instant::now();
+            
+            match self.client
+                .get(url)
+                .header("x-request-id", &self.request_id_header)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    let duration = start.elapsed();
+                    let status = response.status();
+                    
+                    crate::log_api_request!("GET", url, status.as_u16(), duration = duration.as_millis() as u64);
+                    
+                    // Log detailed request/response for debugging
+                    info!(
+                        method = "GET",
+                        url = url,
+                        status = status.as_u16(),
+                        duration_ms = duration.as_millis(),
+                        attempt = attempt + 1,
+                        "API request completed"
+                    );
+                    
+                    if status == StatusCode::TOO_MANY_REQUESTS {
+                        if attempt < self.max_retries {
+                            let delay_ms = self.base_delay_ms; // Fixed 10-second delay
+                            warn!(
+                                attempt = attempt + 1,
+                                max_retries = self.max_retries,
+                                delay_ms = delay_ms,
+                                url = url,
+                                "Rate limited by raider.io, waiting 10 seconds before retry"
+                            );
+                            
+                            crate::log_rate_limit!("raider.io", delay_ms);
+                            
+                            // Show progress during delay
+                            for i in 1..=10 {
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                if i % 2 == 0 {
+                                    println!("  [Rate Limited] Waiting... {}s remaining", 10 - i);
+                                }
+                            }
+                            continue;
+                        } else {
+                            let error = BotError::rate_limit("Raider.io API rate limit exceeded after max retries");
+                            self.save_error_details(url, "GET", None, &error, attempt + 1).await;
+                            error!(
+                                attempts = attempt + 1,
+                                url = url,
+                                "Rate limit exceeded max retries, giving up"
+                            );
+                            return Err(error);
+                        }
+                    }
+                    
+                    if status.is_server_error() {
+                        if attempt < self.max_retries {
+                            let delay_ms = self.base_delay_ms; // Fixed 10-second delay
+                            warn!(
+                                attempt = attempt + 1,
+                                max_retries = self.max_retries,
+                                delay_ms = delay_ms,
+                                status = status.as_u16(),
+                                url = url,
+                                "Server error from raider.io, waiting 10 seconds before retry"
+                            );
+                            
+                            // Show progress during delay
+                            for i in 1..=10 {
+                                tokio::time::sleep(Duration::from_secs(1)).await;
+                                if i % 2 == 0 {
+                                    println!("  [Server Error] Waiting... {}s remaining", 10 - i);
+                                }
+                            }
+                            continue;
+                        } else {
+                            let error = BotError::raider_io(status.as_u16(), "Server error after max retries");
+                            self.save_error_details(url, "GET", None, &error, attempt + 1).await;
+                            error!(
+                                attempts = attempt + 1,
+                                status = status.as_u16(),
+                                url = url,
+                                "Server error exceeded max retries, giving up"
+                            );
+                            return Err(error);
+                        }
+                    }
+                    
+                    if attempt > 0 {
+                        info!(
+                            attempt = attempt + 1,
+                            status = status.as_u16(),
+                            url = url,
+                            "Request succeeded after retry"
+                        );
+                    }
+                    
+                    return Ok(response);
+                },
+                Err(e) => {
+                    let duration = start.elapsed();
+                    warn!(
+                        attempt = attempt + 1,
+                        max_retries = self.max_retries,
+                        error = %e,
+                        duration_ms = duration.as_millis(),
+                        url = url,
+                        "HTTP request failed"
+                    );
+                    
+                    if attempt < self.max_retries {
+                        let delay_ms = self.base_delay_ms; // Fixed 10-second delay
+                        warn!(
+                            delay_ms = delay_ms,
+                            "Retrying after network error in 10 seconds"
+                        );
+                        sleep(Duration::from_millis(delay_ms)).await;
+                        last_error = Some(BotError::Http(e));
+                        continue;
+                    } else {
+                        let error = BotError::Http(e);
+                        self.save_error_details(url, "GET", None, &error, attempt + 1).await;
+                        error!(
+                            attempts = attempt + 1,
+                            error = %error,
+                            url = url,
+                            "Network error exceeded max retries, giving up"
+                        );
+                        return Err(error);
+                    }
+                }
+            }
+        }
+        
+        // This should never be reached, but just in case
+        Err(last_error.unwrap_or_else(|| BotError::application("Unexpected retry loop exit")))
+    }
+
     /// Fetch guild raid progression data
     #[instrument(skip(self), fields(guild = %guild_url.name, realm = %guild_url.realm, tier = %tier))]
     pub async fn fetch_guild_data(&self, guild_url: &GuildUrl, tier: RaidTier) -> Result<Option<GuildData>> {
@@ -232,32 +417,67 @@ impl RaiderIOClient {
 
         debug!("Fetching guild data from: {}", url);
 
-        let start = std::time::Instant::now();
-        let response = self.client
-            .get(&url)
-            .header("x-request-id", &self.request_id_header)
-            .send()
-            .await
-            .map_err(BotError::Http)?;
-
-        let duration = start.elapsed();
+        let response = self.execute_request_with_retry(&url).await?;
         let status = response.status();
 
-        crate::log_api_request!("GET", url, status.as_u16(), duration = duration.as_millis() as u64);
-
-        if !response.status().is_success() {
+        if !status.is_success() {
             if status == StatusCode::NOT_FOUND {
                 warn!("Guild not found: {}/{}", guild_url.realm, guild_url.name);
                 return Ok(None);
             }
-            return Err(BotError::from(status));
+            let error = BotError::from(status);
+            // Save error details for failed HTTP status codes
+            self.save_error_details(&url, "GET", None, &error, 1).await;
+            return Err(error);
         }
 
         let response_text = response.text().await.map_err(BotError::Http)?;
         
+        debug!("Received guild data response: {} characters", response_text.len());
+        
         // Parse the JSON and log the successful response
         let guild_data: RaiderIOGuildResponse = serde_json::from_str(&response_text)
-            .map_err(|e| BotError::Application(format!("Failed to parse JSON: {}", e)))?;
+            .map_err(|e| {
+                let error = BotError::Application(format!("Failed to parse JSON: {}", e));
+                
+                // Save detailed error info for JSON parsing failures
+                let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f");
+                let error_id = format!("parse_error_{}", timestamp);
+                let error_dir = "logs/errors";
+                
+                if fs::create_dir_all(error_dir).is_ok() {
+                    let error_file = format!("{}/{}.json", error_dir, error_id);
+                    let error_data = serde_json::json!({
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                        "error_id": error_id,
+                        "request": {
+                            "method": "GET",
+                            "url": &url
+                        },
+                        "response": {
+                            "body": &response_text,
+                            "body_length": response_text.len(),
+                            "preview": &response_text[..response_text.len().min(500)]
+                        },
+                        "error": {
+                            "message": e.to_string(),
+                            "type": "JSON_PARSE_ERROR"
+                        }
+                    });
+                    
+                    if let Ok(json_str) = serde_json::to_string_pretty(&error_data) {
+                        let _ = fs::write(error_file, json_str);
+                    }
+                }
+                
+                error!(
+                    error = %e,
+                    response_preview = &response_text[..response_text.len().min(500)],
+                    error_file = %error_id,
+                    "Failed to parse guild data JSON response, saved details to logs/errors/{}.json", error_id
+                );
+                error
+            })?;
         
 
         debug!("Looking for raid_name: '{}' in raid_progression keys: {:?}", raid_name, guild_data.raid_progression.keys().collect::<Vec<_>>());
@@ -287,7 +507,14 @@ impl RaiderIOClient {
                 (percent, count)
             },
             Err(e) => {
-                warn!("Failed to fetch boss kill data for {}/{}: {}", guild_url.realm, guild_url.name, e);
+                warn!(
+                    guild = %guild_url.name,
+                    realm = %guild_url.realm,
+                    raid = raid_name,
+                    progress = %progress,
+                    error = %e,
+                    "Failed to fetch boss kill data, using fallback values"
+                );
                 // For guilds with progression but no detailed boss data, 
                 // still show meaningful progression instead of zeros
                 if progress.contains("8/8") {
@@ -313,13 +540,21 @@ impl RaiderIOClient {
         let guild_data = GuildData {
             name: guild_url.name.clone(),
             realm: guild_url.realm.clone(),
-            progress,
+            progress: progress.clone(),
             rank,
             best_percent,
             pull_count,
         };
 
-        debug!("Successfully fetched guild data for {}/{}", guild_url.realm, guild_url.name);
+        info!(
+            guild = %guild_url.name,
+            realm = %guild_url.realm,
+            progress = %progress,
+            rank = ?rank,
+            best_percent = best_percent,
+            pull_count = ?pull_count,
+            "Successfully fetched guild data"
+        );
         Ok(Some(guild_data))
     }
 
@@ -393,12 +628,13 @@ impl RaiderIOClient {
 
         debug!("Fetching boss kill data from: {}", url);
 
-        let response = self.client
-            .get(&url)
-            .header("x-request-id", &self.request_id_header)
-            .send()
-            .await
-            .map_err(BotError::Http)?;
+        let response = match self.execute_request_with_retry(&url).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                warn!("Failed to fetch boss kill data after retries: {}", e);
+                return Ok((0.0, None));
+            }
+        };
         
         let status = response.status();
         
@@ -415,6 +651,7 @@ impl RaiderIOClient {
         let response_text = response.text().await
             .map_err(|e| BotError::Application(format!("Failed to get response text: {}", e)))?;
         
+        debug!("Received boss kill response: {} characters", response_text.len());
         
         // Handle empty JSON response ({})
         if response_text.trim() == "{}" {
@@ -427,7 +664,52 @@ impl RaiderIOClient {
         }
 
         let boss_data: BossKillResponse = serde_json::from_str(&response_text)
-            .map_err(|e| BotError::Application(format!("Failed to parse JSON: {}", e)))?;
+            .map_err(|e| {
+                let error = BotError::Application(format!("Failed to parse boss kill JSON: {}", e));
+                
+                // Save detailed error info for boss kill JSON parsing failures
+                let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f");
+                let error_id = format!("boss_parse_error_{}", timestamp);
+                let error_dir = "logs/errors";
+                
+                if fs::create_dir_all(error_dir).is_ok() {
+                    let error_file = format!("{}/{}.json", error_dir, error_id);
+                    let error_data = serde_json::json!({
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                        "error_id": error_id,
+                        "request": {
+                            "method": "GET",
+                            "url": &url,
+                            "guild": guild,
+                            "realm": realm,
+                            "raid": raid,
+                            "difficulty": difficulty,
+                            "boss": boss_name
+                        },
+                        "response": {
+                            "body": &response_text,
+                            "body_length": response_text.len(),
+                            "preview": &response_text[..response_text.len().min(500)]
+                        },
+                        "error": {
+                            "message": e.to_string(),
+                            "type": "BOSS_KILL_JSON_PARSE_ERROR"
+                        }
+                    });
+                    
+                    if let Ok(json_str) = serde_json::to_string_pretty(&error_data) {
+                        let _ = fs::write(error_file, json_str);
+                    }
+                }
+                
+                error!(
+                    error = %e,
+                    response_preview = &response_text[..response_text.len().min(500)],
+                    error_file = %error_id,
+                    "Failed to parse boss kill JSON response, saved details to logs/errors/{}.json", error_id
+                );
+                error
+            })?;
 
         let (best_percent, pull_count) = if let Some(kill_details) = boss_data.kill_details {
             // Use killDetails format (like Python bot)
@@ -488,12 +770,13 @@ impl RaiderIOClient {
 
         debug!("Trying next boss kill data from: {}", url);
         
-        let response = self.client
-            .get(&url)
-            .header("x-request-id", &self.request_id_header)
-            .send()
-            .await
-            .map_err(BotError::Http)?;
+        let response = match self.execute_request_with_retry(&url).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                debug!("Next boss kill data not available after retries: {}", e);
+                return Ok((0.0, None));
+            }
+        };
         
         let status = response.status();
         
@@ -505,6 +788,7 @@ impl RaiderIOClient {
         let response_text = response.text().await
             .map_err(|e| BotError::Application(format!("Failed to get response text: {}", e)))?;
         
+        debug!("Received next boss kill response: {} characters", response_text.len());
         
         // Handle empty JSON response for next boss too
         if response_text.trim() == "{}" {
@@ -513,7 +797,14 @@ impl RaiderIOClient {
         }
         
         let boss_data: BossKillResponse = serde_json::from_str(&response_text)
-            .map_err(|e| BotError::Application(format!("Failed to parse next boss JSON: {}", e)))?;
+            .map_err(|e| {
+                error!(
+                    error = %e,
+                    response_preview = &response_text[..response_text.len().min(500)],
+                    "Failed to parse next boss kill JSON response"
+                );
+                BotError::Application(format!("Failed to parse next boss JSON: {}", e))
+            })?;
 
         let (best_percent, pull_count) = if let Some(kill_details) = boss_data.kill_details {
             // Use killDetails format (preferred, like main function)
@@ -556,26 +847,8 @@ impl RaiderIOClient {
 
         debug!("Fetching player data from: {}", url);
 
-        let start = std::time::Instant::now();
-        let response = self.client
-            .get(&url)
-            .header("x-request-id", &self.request_id_header)
-            .send()
-            .await
-            .map_err(BotError::Http)?;
-
-        let duration = start.elapsed();
+        let response = self.execute_request_with_retry(&url).await?;
         let status = response.status();
-
-        crate::log_api_request!("GET", url, status.as_u16(), duration = duration.as_millis() as u64);
-
-        if status == StatusCode::TOO_MANY_REQUESTS {
-            return Err(BotError::rate_limit("Raider.io API rate limit exceeded"));
-        }
-
-        if status.is_server_error() {
-            return Err(BotError::raider_io(status.as_u16(), "Server error from raider.io"));
-        }
 
         if status == StatusCode::NOT_FOUND {
             debug!("Player not found: {}/{}", name, realm);
@@ -583,13 +856,61 @@ impl RaiderIOClient {
         }
 
         if !status.is_success() {
-            return Err(BotError::from(status));
+            let error = BotError::from(status);
+            // Save error details for failed HTTP status codes
+            self.save_error_details(&url, "GET", None, &error, 1).await;
+            return Err(error);
         }
 
-        let player_response: RaiderIOPlayerResponse = response
-            .json()
-            .await
-            .map_err(|e| BotError::Application(format!("Failed to parse JSON: {}", e)))?;
+        let response_text = response.text().await
+            .map_err(|e| BotError::Application(format!("Failed to get response text: {}", e)))?;
+        
+        debug!("Received player data response: {} characters", response_text.len());
+        
+        let player_response: RaiderIOPlayerResponse = serde_json::from_str(&response_text)
+            .map_err(|e| {
+                let error = BotError::Application(format!("Failed to parse player JSON: {}", e));
+                
+                // Save detailed error info for player JSON parsing failures
+                let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f");
+                let error_id = format!("player_parse_error_{}", timestamp);
+                let error_dir = "logs/errors";
+                
+                if fs::create_dir_all(error_dir).is_ok() {
+                    let error_file = format!("{}/{}.json", error_dir, error_id);
+                    let error_data = serde_json::json!({
+                        "timestamp": chrono::Utc::now().to_rfc3339(),
+                        "error_id": error_id,
+                        "request": {
+                            "method": "GET",
+                            "url": &url,
+                            "player": name,
+                            "realm": realm
+                        },
+                        "response": {
+                            "body": &response_text,
+                            "body_length": response_text.len(),
+                            "preview": &response_text[..response_text.len().min(500)]
+                        },
+                        "error": {
+                            "message": e.to_string(),
+                            "type": "PLAYER_JSON_PARSE_ERROR"
+                        }
+                    });
+                    
+                    if let Ok(json_str) = serde_json::to_string_pretty(&error_data) {
+                        let _ = fs::write(error_file, json_str);
+                    }
+                }
+                
+                error!(
+                    error = %e,
+                    response_preview = &response_text[..response_text.len().min(500)],
+                    error_file = %error_id,
+                    "Failed to parse player data JSON response, saved details to logs/errors/{}.json", error_id
+                );
+                error
+            })?;
 
         let scores = player_response
             .mythic_plus_scores_by_season
@@ -615,7 +936,15 @@ impl RaiderIOClient {
             spec_3: scores.as_ref().and_then(|s| s.spec_3).map(MythicPlusScore::from).unwrap_or(MythicPlusScore::zero()),
         };
 
-        info!("Successfully fetched player data for {}/{}", name, realm);
+        info!(
+            player = %name,
+            realm = %realm,
+            guild = ?player_data.guild,
+            rio_all = player_data.rio_all.value(),
+            class = ?player_data.class,
+            spec = ?player_data.active_spec_name,
+            "Successfully fetched player data"
+        );
         Ok(Some(player_data))
     }
 }
