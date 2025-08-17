@@ -135,7 +135,27 @@ dokku run wow-guild-bot /app/wow_guild_bot parse
 - `RAIDERIO_API_KEY`: Raider.io API key (optional, increases rate limits)
 - `RUST_LOG`: Log level (default: info)
 
+### GitHub Actions CI/CD
+The repository includes automated deployment via GitHub Actions using free runners:
+
+```yaml
+# .github/workflows/deploy.yml
+name: 'deploy'
+on:
+  push:
+    branches: [master]
+jobs:
+  deploy-bot:
+    runs-on: ubuntu-latest
+```
+
+**Required GitHub Secrets:**
+- `DOKKU_GIT_REMOTE_URL`: `ssh://dokku@fin:22`
+- `DOKKU_SSH_PRIVATE_KEY`: Private SSH key for Dokku access
+
+Pushes to `master` branch automatically deploy to the Dokku server using GitHub's free runners.
+
 ### Data Persistence
 - Database and data files are stored in `/app/data/` inside the container
 - Mount this directory as a volume for persistence
-- Required files (`uaguildlist.txt`, `addCharacters.txt`) should be placed in the mounted data directory
+- Guild data is embedded in database migrations (no external files needed)

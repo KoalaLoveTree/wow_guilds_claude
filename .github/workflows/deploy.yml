@@ -1,0 +1,25 @@
+name: 'deploy'
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy-bot:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-bot
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to dokku
+        uses: dokku/github-action@master
+        with:
+          branch: master
+          git_remote_url: ${{ secrets.DOKKU_GIT_REMOTE_URL }}/wow-guild-bot
+          ssh_private_key: ${{ secrets.DOKKU_SSH_PRIVATE_KEY }}
+          git_push_flags: --force
