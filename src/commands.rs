@@ -272,13 +272,20 @@ pub async fn handle_rank_command_multi(command: &ApplicationCommandInteraction, 
             let table_header = "```\nRank Player                       Guild                              Server               Class/Spec               RIO Score\n──── ───────────────────────────── ────────────────────────────────── ──────────────────── ──────────────────────── ─────────\n";
             let table_footer = "```";
             
+            let total_players = players.len();
             let discord_limit = 2000;
             let estimated_row_size = 150;
-            let base_message_size = header.len() + table_header.len() + table_footer.len() + 50; // 50 for safety margin
-            let max_rows_per_message = ((discord_limit - base_message_size) / estimated_row_size).max(1);
+            let base_message_size = header.len() + table_header.len() + table_footer.len() + 100; // Increased safety margin
+            let calculated_max_rows = ((discord_limit - base_message_size) / estimated_row_size).max(1);
+            
+            // Ensure top 10 always fits in one message, but allow more for smaller requests
+            let max_rows_per_message = if total_players <= 10 {
+                total_players // Force all players into one message for top 10 or less
+            } else {
+                calculated_max_rows.max(10) // Ensure at least 10 rows per message for larger requests
+            };
             
             let mut messages = Vec::new();
-            let total_players = players.len();
             
             for chunk_start in (0..total_players).step_by(max_rows_per_message) {
                 let chunk_end = (chunk_start + max_rows_per_message).min(total_players);
