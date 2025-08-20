@@ -232,23 +232,49 @@ fn compare_progression(progress_a: &str, progress_b: &str) -> std::cmp::Ordering
 /// Sort guilds by progression and rank
 pub fn sort_guilds(mut guilds: Vec<GuildData>) -> Vec<GuildData> {
     guilds.sort_by(|a, b| {
-        // First sort by world rank (if available and > 0)
-        let rank_a = a.rank.as_ref().filter(|r| r.value() > 0);
-        let rank_b = b.rank.as_ref().filter(|r| r.value() > 0);
+        // Parse progression to get difficulty for both guilds
+        let (bosses_a, diff_a) = parse_progression(&a.progress);
+        let (bosses_b, diff_b) = parse_progression(&b.progress);
         
-        match (rank_a, rank_b) {
-            (Some(rank_a), Some(rank_b)) => rank_a.value().cmp(&rank_b.value()),
-            (Some(_), None) => std::cmp::Ordering::Less,  // Ranked guilds come first
-            (None, Some(_)) => std::cmp::Ordering::Greater, // Unranked guilds come last
-            (None, None) => {
-                // If no ranks, sort by progression considering difficulty hierarchy
-                match compare_progression(&b.progress, &a.progress) {
-                    std::cmp::Ordering::Equal => {
-                        // Same progression, sort by best percent ascending (lower is better)
-                        a.best_percent.partial_cmp(&b.best_percent).unwrap_or(std::cmp::Ordering::Equal)
+        // STEP 1: Compare by difficulty first (Mythic > Heroic > Normal > LFR)
+        // Higher difficulty should rank higher
+        if diff_a != diff_b {
+            // Different difficulties - higher difficulty wins
+            return diff_b.cmp(&diff_a);
+        }
+        
+        // STEP 2: Same difficulty - compare within difficulty
+        
+        // Special case: Both are 8/8 Mythic (Cutting Edge) - use world rank
+        if diff_a == Difficulty::Mythic && bosses_a == 8 && bosses_b == 8 {
+            let rank_a = a.rank.as_ref().filter(|r| r.value() > 0);
+            let rank_b = b.rank.as_ref().filter(|r| r.value() > 0);
+            
+            match (rank_a, rank_b) {
+                (Some(rank_a), Some(rank_b)) => rank_a.value().cmp(&rank_b.value()),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.best_percent.partial_cmp(&b.best_percent).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        } else {
+            // All other cases: ignore world rank, sort by boss count then percent
+            match bosses_b.cmp(&bosses_a) {
+                std::cmp::Ordering::Equal => {
+                    // Same boss count - sort by kill time first, then best percent
+                    match (&a.defeated_at, &b.defeated_at) {
+                        (Some(time_a), Some(time_b)) => {
+                            // Both have kill times - earlier is better
+                            time_a.cmp(time_b)
+                        }
+                        (Some(_), None) => std::cmp::Ordering::Less,    // Guild with kill time beats guild without
+                        (None, Some(_)) => std::cmp::Ordering::Greater, // Guild without kill time loses
+                        (None, None) => {
+                            // Neither has kill time - sort by best percent (lower is better)
+                            a.best_percent.partial_cmp(&b.best_percent).unwrap_or(std::cmp::Ordering::Equal)
+                        }
                     }
-                    other => other
                 }
+                other => other
             }
         }
     });
@@ -341,6 +367,7 @@ mod tests {
                 rank: Some(WorldRank::new(50)),
                 best_percent: 100.0,
                 pull_count: None,
+                defeated_at: None,
             },
             GuildData {
                 name: GuildName::from("Very Long Guild Name That Should Be Truncated"),
@@ -349,6 +376,7 @@ mod tests {
                 rank: Some(WorldRank::new(1250)),
                 best_percent: 85.5,
                 pull_count: Some(120),
+                defeated_at: None,
             },
             GuildData {
                 name: GuildName::from("Short"),
@@ -357,6 +385,7 @@ mod tests {
                 rank: None,
                 best_percent: 75.0,
                 pull_count: None,
+                defeated_at: None,
             },
         ];
 
@@ -404,6 +433,7 @@ mod tests {
                 rank: Some(crate::types::WorldRank::from(100)),
                 best_percent: 85.0,
                 pull_count: Some(50),
+                defeated_at: None,
             },
             GuildData {
                 name: GuildName::from("Guild A"),
@@ -412,6 +442,7 @@ mod tests {
                 rank: Some(crate::types::WorldRank::from(50)),
                 best_percent: 100.0,
                 pull_count: Some(120),
+                defeated_at: None,
             },
         ];
 
@@ -431,6 +462,7 @@ mod tests {
                 rank: None,  // No world rank
                 best_percent: 100.0,
                 pull_count: None,
+                defeated_at: None,
             },
             GuildData {
                 name: GuildName::from("Heroic Guild"),
@@ -439,6 +471,7 @@ mod tests {
                 rank: None,  // No world rank
                 best_percent: 25.0,
                 pull_count: None,
+                defeated_at: None,
             },
         ];
 
@@ -459,6 +492,7 @@ mod tests {
                 rank: None,
                 best_percent: 100.0,
                 pull_count: None,
+                defeated_at: None,
             },
             GuildData {
                 name: GuildName::from("Normal Guild"),
@@ -467,6 +501,7 @@ mod tests {
                 rank: None,
                 best_percent: 12.5,
                 pull_count: None,
+                defeated_at: None,
             },
             GuildData {
                 name: GuildName::from("Heroic Guild"),
@@ -475,6 +510,7 @@ mod tests {
                 rank: None,
                 best_percent: 12.5,
                 pull_count: None,
+                defeated_at: None,
             },
             GuildData {
                 name: GuildName::from("Mythic Guild"),
@@ -483,6 +519,7 @@ mod tests {
                 rank: None,
                 best_percent: 12.5,
                 pull_count: None,
+                defeated_at: None,
             },
         ];
 
@@ -505,6 +542,7 @@ mod tests {
                 rank: None,
                 best_percent: 37.5,
                 pull_count: None,
+                defeated_at: None,
             },
             GuildData {
                 name: GuildName::from("5 Heroic"),
@@ -513,6 +551,7 @@ mod tests {
                 rank: None,
                 best_percent: 62.5,
                 pull_count: None,
+                defeated_at: None,
             },
         ];
 
@@ -520,5 +559,385 @@ mod tests {
         // 5/8 H should rank higher than 3/8 H
         assert_eq!(sorted[0].name.to_string(), "5 Heroic");
         assert_eq!(sorted[1].name.to_string(), "3 Heroic");
+    }
+
+    #[test]
+    fn test_comprehensive_sorting() {
+        // Test comprehensive sorting as specified by user:
+        // 1. Difficulty priority: Mythic > Heroic > Normal > LFR
+        // 2. Boss count within same difficulty
+        // 3. Best percent (lower is better)
+        // 4. World rank only for 8/8 Mythic
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("8/8 Normal"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 N".to_string(),
+                rank: None,
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("2/8 Heroic"),
+                realm: RealmName::from("realm1"),
+                progress: "2/8 H".to_string(),
+                rank: None,
+                best_percent: 25.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("1/8 Mythic"),
+                realm: RealmName::from("realm1"),
+                progress: "1/8 M".to_string(),
+                rank: None,
+                best_percent: 12.5,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("8/8 Mythic Good Rank"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 M".to_string(),
+                rank: Some(crate::types::WorldRank::from(100)),
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("8/8 Mythic Bad Rank"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 M".to_string(),
+                rank: Some(crate::types::WorldRank::from(500)),
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("7/8 Heroic Better Percent"),
+                realm: RealmName::from("realm1"),
+                progress: "7/8 H".to_string(),
+                rank: Some(crate::types::WorldRank::from(1)), // World rank should be ignored for non-8/8M
+                best_percent: 87.5,
+                pull_count: Some(50),
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("7/8 Heroic Worse Percent"),
+                realm: RealmName::from("realm1"),
+                progress: "7/8 H".to_string(),
+                rank: Some(crate::types::WorldRank::from(1000)), // World rank should be ignored for non-8/8M
+                best_percent: 90.0,
+                pull_count: Some(100),
+                defeated_at: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        
+        // Expected order:
+        // 1. 8/8 Mythic Good Rank (8/8 M, rank 100)
+        // 2. 8/8 Mythic Bad Rank (8/8 M, rank 500)
+        // 3. 1/8 Mythic (1/8 M - any mythic beats any heroic)
+        // 4. 7/8 Heroic Better Percent (7/8 H, 87.5% - more bosses than 2/8 H)
+        // 5. 7/8 Heroic Worse Percent (7/8 H, 90.0% - same bosses, worse percent)
+        // 6. 2/8 Heroic (2/8 H - fewer heroic bosses)
+        // 7. 8/8 Normal (8/8 N - full normal clear but lower difficulty)
+        
+        assert_eq!(sorted[0].name.to_string(), "8/8 Mythic Good Rank");
+        assert_eq!(sorted[1].name.to_string(), "8/8 Mythic Bad Rank");
+        assert_eq!(sorted[2].name.to_string(), "1/8 Mythic");
+        assert_eq!(sorted[3].name.to_string(), "7/8 Heroic Better Percent");
+        assert_eq!(sorted[4].name.to_string(), "7/8 Heroic Worse Percent");
+        assert_eq!(sorted[5].name.to_string(), "2/8 Heroic");
+        assert_eq!(sorted[6].name.to_string(), "8/8 Normal");
+    }
+
+    #[test]
+    fn test_heroic_world_rank_bug() {
+        // Test the specific bug: 8/8 H should rank higher than 6/8 H regardless of world rank
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("6/8 Heroic Good Rank"),
+                realm: RealmName::from("realm1"),
+                progress: "6/8 H".to_string(),
+                rank: Some(crate::types::WorldRank::from(100)), // Good world rank
+                best_percent: 75.0,
+                pull_count: Some(50),
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("8/8 Heroic Bad Rank"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 H".to_string(),
+                rank: Some(crate::types::WorldRank::from(5000)), // Bad world rank
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("8/8 Heroic No Rank"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 H".to_string(),
+                rank: None, // No world rank
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        
+        // Expected order (world rank should be IGNORED for heroic):
+        // 1. 8/8 Heroic Bad Rank (8 bosses beats 6 bosses regardless of rank)
+        // 2. 8/8 Heroic No Rank (8 bosses beats 6 bosses regardless of rank)
+        // 3. 6/8 Heroic Good Rank (only 6 bosses, should be last despite good rank)
+        
+        assert_eq!(sorted[0].name.to_string(), "8/8 Heroic Bad Rank");
+        assert_eq!(sorted[1].name.to_string(), "8/8 Heroic No Rank");
+        assert_eq!(sorted[2].name.to_string(), "6/8 Heroic Good Rank");
+    }
+
+    #[test] 
+    fn test_debug_world_rank_issue() {
+        // Debug the exact scenario you're seeing
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("8/8 H Guild"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 H".to_string(),
+                rank: None, // No world rank
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("6/8 H Guild"),
+                realm: RealmName::from("realm1"),
+                progress: "6/8 H".to_string(),
+                rank: Some(crate::types::WorldRank::from(100)), // Has mythic world rank
+                best_percent: 75.0,
+                pull_count: Some(50),
+                defeated_at: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        
+        // Debug output
+        println!("Sorted order:");
+        for (i, guild) in sorted.iter().enumerate() {
+            println!("  {}: {} - {} (rank: {:?})", 
+                i + 1, 
+                guild.name.to_string(), 
+                guild.progress,
+                guild.rank
+            );
+        }
+        
+        // 8/8 H should rank higher than 6/8 H regardless of world rank
+        assert_eq!(sorted[0].name.to_string(), "8/8 H Guild");
+        assert_eq!(sorted[1].name.to_string(), "6/8 H Guild");
+    }
+
+    #[test]
+    fn test_world_rank_bug_reproduction() {
+        // Try to reproduce the exact bug: 8/8 H ranking lower than 6/8 H due to world rank
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("6/8 H Good Rank"),
+                realm: RealmName::from("realm1"),
+                progress: "6/8 H".to_string(),
+                rank: Some(crate::types::WorldRank::from(50)), // Very good world rank
+                best_percent: 75.0,
+                pull_count: Some(100),
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("8/8 H No Rank"),
+                realm: RealmName::from("realm1"), 
+                progress: "8/8 H".to_string(),
+                rank: None, // No world rank
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("6/8 H Worse Progress"),
+                realm: RealmName::from("realm1"),
+                progress: "6/8 H".to_string(), 
+                rank: Some(crate::types::WorldRank::from(10)), // Even better world rank
+                best_percent: 60.0,
+                pull_count: Some(50),
+                defeated_at: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        
+        println!("\nReproduction test results:");
+        for (i, guild) in sorted.iter().enumerate() {
+            println!("  {}: {} - {} (rank: {:?}, percent: {}%)", 
+                i + 1, 
+                guild.name.to_string(), 
+                guild.progress,
+                guild.rank.as_ref().map(|r| r.value()),
+                guild.best_percent
+            );
+        }
+        
+        // Expected order should be:
+        // 1. 8/8 H No Rank (most bosses killed, world rank irrelevant)
+        // 2. 6/8 H Worse Progress (better percentage than other 6/8)  
+        // 3. 6/8 H Good Rank (same bosses but worse percentage)
+        assert_eq!(sorted[0].name.to_string(), "8/8 H No Rank", "8/8 H should rank first regardless of world rank");
+        
+        // For the 6/8 guilds, they should be sorted by best_percent (lower is better)
+        assert_eq!(sorted[1].name.to_string(), "6/8 H Worse Progress", "Better percentage should rank higher among same boss count");
+        assert_eq!(sorted[2].name.to_string(), "6/8 H Good Rank", "World rank should be ignored for non-8/8M guilds");
+    }
+
+    #[test]
+    fn test_cross_difficulty_world_rank_bug() {
+        // Test the bug: heroic guilds with good world ranks beating mythic guilds
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("1/8 M No Rank"),
+                realm: RealmName::from("realm1"),
+                progress: "1/8 M".to_string(),
+                rank: None, // No world rank
+                best_percent: 12.5,
+                pull_count: Some(100),
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("8/8 H Good Rank"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 H".to_string(),
+                rank: Some(crate::types::WorldRank::from(50)), // Very good world rank
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        
+        println!("\nCross-difficulty test results:");
+        for (i, guild) in sorted.iter().enumerate() {
+            println!("  {}: {} - {} (rank: {:?})", 
+                i + 1, 
+                guild.name.to_string(), 
+                guild.progress,
+                guild.rank.as_ref().map(|r| r.value())
+            );
+        }
+        
+        // ANY mythic progress should beat ANY heroic progress, regardless of world rank
+        assert_eq!(sorted[0].name.to_string(), "1/8 M No Rank", "Any mythic progress should beat any heroic progress");
+        assert_eq!(sorted[1].name.to_string(), "8/8 H Good Rank", "Heroic should rank lower than mythic regardless of world rank");
+    }
+
+    #[test]
+    fn test_actual_bug_reproduction() {
+        // This test should FAIL if the bug exists - let me reproduce exactly what you're seeing
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("Should Rank FIRST"),
+                realm: RealmName::from("realm1"),
+                progress: "8/8 H".to_string(), // Full heroic clear
+                rank: None, // No world rank
+                best_percent: 100.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("Should Rank SECOND"),
+                realm: RealmName::from("realm1"),
+                progress: "6/8 H".to_string(), // Partial heroic
+                rank: Some(crate::types::WorldRank::from(1)), // Rank #1 world (very good!)
+                best_percent: 75.0,
+                pull_count: Some(50),
+                defeated_at: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        
+        println!("\n=== ACTUAL BUG TEST ===");
+        for (i, guild) in sorted.iter().enumerate() {
+            println!("Position {}: {} - {} (world rank: {:?})", 
+                i + 1, 
+                guild.name.to_string(), 
+                guild.progress,
+                guild.rank.as_ref().map(|r| r.value())
+            );
+        }
+        
+        // This assertion should pass if the sorting is correct
+        // If the bug exists, this will fail because 6/8 H with good rank beats 8/8 H
+        if sorted[0].name.to_string() != "Should Rank FIRST" {
+            panic!("BUG CONFIRMED: 6/8 H guild with world rank #{} is beating 8/8 H guild!", 
+                sorted[0].rank.as_ref().map(|r| r.value()).unwrap_or(0));
+        }
+        
+        assert_eq!(sorted[0].name.to_string(), "Should Rank FIRST");
+        assert_eq!(sorted[1].name.to_string(), "Should Rank SECOND");
+    }
+
+    #[test]
+    fn test_kill_time_sorting() {
+        // Test that earlier kill time ranks higher for same progress
+        let mut guilds = vec![
+            GuildData {
+                name: GuildName::from("Later Kill"),
+                realm: RealmName::from("realm1"),
+                progress: "3/8 M".to_string(),
+                rank: None,
+                best_percent: 37.5,
+                pull_count: Some(100),
+                defeated_at: Some("2024-01-02T10:00:00Z".to_string()), // Later kill
+            },
+            GuildData {
+                name: GuildName::from("Earlier Kill"),
+                realm: RealmName::from("realm1"),
+                progress: "3/8 M".to_string(),
+                rank: None,
+                best_percent: 37.5,
+                pull_count: Some(100),
+                defeated_at: Some("2024-01-01T10:00:00Z".to_string()), // Earlier kill
+            },
+            GuildData {
+                name: GuildName::from("No Kill Time"),
+                realm: RealmName::from("realm1"),
+                progress: "3/8 M".to_string(),
+                rank: None,
+                best_percent: 30.0, // Better percent but no kill time
+                pull_count: Some(50),
+                defeated_at: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        
+        println!("\nKill time sorting test results:");
+        for (i, guild) in sorted.iter().enumerate() {
+            println!("  {}: {} - {} (kill time: {:?})", 
+                i + 1, 
+                guild.name.to_string(), 
+                guild.progress,
+                guild.defeated_at
+            );
+        }
+        
+        // Expected order:
+        // 1. Earlier Kill (has kill time from 2024-01-01)
+        // 2. Later Kill (has kill time from 2024-01-02)  
+        // 3. No Kill Time (no kill time, despite better percent)
+        
+        assert_eq!(sorted[0].name.to_string(), "Earlier Kill");
+        assert_eq!(sorted[1].name.to_string(), "Later Kill");
+        assert_eq!(sorted[2].name.to_string(), "No Kill Time");
     }
 }
