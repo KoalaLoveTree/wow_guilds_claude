@@ -245,37 +245,30 @@ pub fn sort_guilds(mut guilds: Vec<GuildData>) -> Vec<GuildData> {
         
         // STEP 2: Same difficulty - compare within difficulty
         
-        // Special case: Both are 8/8 Mythic (Cutting Edge) - use world rank
-        if diff_a == Difficulty::Mythic && bosses_a == 8 && bosses_b == 8 {
-            let rank_a = a.rank.as_ref().filter(|r| r.value() > 0);
-            let rank_b = b.rank.as_ref().filter(|r| r.value() > 0);
-            
-            match (rank_a, rank_b) {
-                (Some(rank_a), Some(rank_b)) => rank_a.value().cmp(&rank_b.value()),
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => a.best_percent.partial_cmp(&b.best_percent).unwrap_or(std::cmp::Ordering::Equal)
-            }
-        } else {
-            // All other cases: ignore world rank, sort by boss count then percent
-            match bosses_b.cmp(&bosses_a) {
-                std::cmp::Ordering::Equal => {
-                    // Same boss count - sort by kill time first, then best percent
-                    match (&a.defeated_at, &b.defeated_at) {
-                        (Some(time_a), Some(time_b)) => {
-                            // Both have kill times - earlier is better
-                            time_a.cmp(time_b)
-                        }
-                        (Some(_), None) => std::cmp::Ordering::Less,    // Guild with kill time beats guild without
-                        (None, Some(_)) => std::cmp::Ordering::Greater, // Guild without kill time loses
+        // Compare by boss count first
+        match bosses_b.cmp(&bosses_a) {
+            std::cmp::Ordering::Equal => {
+                // Same boss count - now check difficulty for ranking logic
+                if diff_a == Difficulty::Mythic {
+                    // Mythic difficulty: same boss count -> sort by world rank first
+                    let rank_a = a.rank.as_ref().filter(|r| r.value() > 0);
+                    let rank_b = b.rank.as_ref().filter(|r| r.value() > 0);
+                    
+                    match (rank_a, rank_b) {
+                        (Some(rank_a), Some(rank_b)) => rank_a.value().cmp(&rank_b.value()),
+                        (Some(_), None) => std::cmp::Ordering::Less,  // Ranked comes first
+                        (None, Some(_)) => std::cmp::Ordering::Greater, // Unranked comes last
                         (None, None) => {
-                            // Neither has kill time - sort by best percent (lower is better)
+                            // Both unranked - sort by best percent (lower is better, closer to kill)
                             a.best_percent.partial_cmp(&b.best_percent).unwrap_or(std::cmp::Ordering::Equal)
                         }
                     }
+                } else {
+                    // Non-Mythic difficulty: same boss count -> sort by percent only (ignore world rank)
+                    a.best_percent.partial_cmp(&b.best_percent).unwrap_or(std::cmp::Ordering::Equal)
                 }
-                other => other
             }
+            other => other // Different boss counts - higher boss count wins
         }
     });
     
@@ -939,5 +932,86 @@ mod tests {
         assert_eq!(sorted[0].name.to_string(), "Earlier Kill");
         assert_eq!(sorted[1].name.to_string(), "Later Kill");
         assert_eq!(sorted[2].name.to_string(), "No Kill Time");
+    }
+    
+    #[test]
+    fn test_mythic_world_rank_sorting() {
+        // Test the specific case from user: same mythic progress should be sorted by world rank
+        let guilds = vec![
+            GuildData {
+                name: GuildName::from("Arey"),
+                realm: RealmName::from("Terokkar"),
+                progress: "2/8 M".to_string(),
+                rank: Some(crate::types::WorldRank::from(1102)),
+                best_percent: 25.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("Thorned Horde"),
+                realm: RealmName::from("Tarren Mill"),
+                progress: "2/8 M".to_string(),
+                rank: Some(crate::types::WorldRank::from(1176)),
+                best_percent: 25.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("Nomads TM"),
+                realm: RealmName::from("Tarren Mill"),
+                progress: "2/8 M".to_string(),
+                rank: Some(crate::types::WorldRank::from(925)),
+                best_percent: 25.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("Tauren Milfs"),
+                realm: RealmName::from("Tarren Mill"),
+                progress: "2/8 M".to_string(),
+                rank: Some(crate::types::WorldRank::from(942)),
+                best_percent: 25.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("Wrong Tactics Folks"),
+                realm: RealmName::from("Tarren Mill"),
+                progress: "2/8 M".to_string(),
+                rank: Some(crate::types::WorldRank::from(1116)),
+                best_percent: 25.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+            GuildData {
+                name: GuildName::from("Нехай Щастить"),
+                realm: RealmName::from("Tarren Mill"),
+                progress: "2/8 M".to_string(),
+                rank: Some(crate::types::WorldRank::from(746)),
+                best_percent: 25.0,
+                pull_count: None,
+                defeated_at: None,
+            },
+        ];
+
+        let sorted = sort_guilds(guilds);
+        
+        println!("\nMythic world rank sorting test results:");
+        for (i, guild) in sorted.iter().enumerate() {
+            println!("  {}: {} - {} - rank: {:?}", 
+                i + 1, 
+                guild.name.to_string(), 
+                guild.progress,
+                guild.rank.as_ref().map(|r| r.value())
+            );
+        }
+        
+        // Expected order by world rank: 746, 925, 942, 1102, 1116, 1176
+        assert_eq!(sorted[0].name.to_string(), "Нехай Щастить"); // #746
+        assert_eq!(sorted[1].name.to_string(), "Nomads TM");     // #925
+        assert_eq!(sorted[2].name.to_string(), "Tauren Milfs");  // #942
+        assert_eq!(sorted[3].name.to_string(), "Arey");          // #1102
+        assert_eq!(sorted[4].name.to_string(), "Wrong Tactics Folks"); // #1116
+        assert_eq!(sorted[5].name.to_string(), "Thorned Horde"); // #1176
     }
 }
